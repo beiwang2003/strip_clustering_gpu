@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mm_malloc.h>
+#include <omp.h>
 
 #define IDEAL_ALIGNMENT 64
 using detId_t = uint32_t;
@@ -42,6 +43,7 @@ int main()
   }
   int nStrips=i;
 
+  double start = omp_get_wtime();
   float ChannelThreshold = 2.0, SeedThreshold = 3.0, ClusterThresholdSquared = 25.0;
   uint8_t MaxSequentialHoles = 0, MaxSequentialBad = 1, MaxAdjacentBad = 0;
   bool RemoveApvShots = true;
@@ -49,18 +51,23 @@ int main()
 
   // find the seed strips
   int nSeedStrips=0;
+#pragma omp parallel for
   for (int i=0; i<nStrips; i++) {
     float noise_i = noise[i];
     uint8_t adc_i = static_cast<uint8_t>(adc[i]);
     seedStripMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? true:false;
-    if (seedStripMask[i] == true) nSeedStrips++;
+    if (seedStripMask[i] == true)
+#pragma omp atomic
+      nSeedStrips++;
   }
 
   int nSeedStripsNC=0;
+#pragma omp parallel for
   for (int i=0; i<nStrips; i++) {
     if (seedStripMask[i] == true) {
       if (stripId[i]-stripId[i-1]!=1) {
 	seedStripNCMask[i] = true;
+#pragma omp atomic
 	nSeedStripsNC++;
       }
     }
@@ -88,6 +95,7 @@ int main()
     exit (1);
   }
 
+#pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++) {
     trueCluster[i] = false;
     clusterNoiseSquared[i] = 0;
@@ -95,6 +103,7 @@ int main()
 
   // find the left and right bounday of the candidate cluster
   // (currently, we assume no bad strip. fix later)
+#pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++) {
     int index=seedStripsNCIndex[i];
     clusterLastIndexLeft[i] = index;
@@ -129,6 +138,7 @@ int main()
 
   // check if the candidate cluster is a true cluster
   // if so, do some adjustment for the adc values
+#pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++){
     int left=clusterLastIndexLeft[i];
     int right=clusterLastIndexRight[i];
@@ -151,6 +161,8 @@ int main()
     }
   }
 
+  double end = omp_get_wtime();
+
   // print out the result
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
@@ -165,6 +177,8 @@ int main()
       std::cout<<std::endl;
     }
   }
+
+  std::cout<<"clustering time "<<end-start<<std::endl;
 
   free(detId);
   free(fedId);
