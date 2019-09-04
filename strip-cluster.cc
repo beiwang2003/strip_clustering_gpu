@@ -62,8 +62,9 @@ int main()
   }
 
   int nSeedStripsNC=0;
+  seedStripNCMask[0] = seedStripMask[0];
 #pragma omp parallel for
-  for (int i=0; i<nStrips; i++) {
+  for (int i=1; i<nStrips; i++) {
     if (seedStripMask[i] == true) {
       if (stripId[i]-stripId[i-1]!=1) {
 	seedStripNCMask[i] = true;
@@ -90,7 +91,7 @@ int main()
     }
   }
 
-  if (j!=nSeedStripsNC) {
+  if ((j-1)!=nSeedStripsNC) {
     std::cout<<"j "<<j<<"nSeedStripsNC "<<nSeedStripsNC<<std::endl;
     exit (1);
   }
@@ -177,7 +178,6 @@ int main()
       std::cout<<std::endl;
     }
   }
-
   std::cout<<"clustering time "<<end-start<<std::endl;
 
   free(detId);
