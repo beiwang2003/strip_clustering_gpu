@@ -3,19 +3,19 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mm_malloc.h>
-#include <omp.h>
+//#include <omp.h>
 
 #define IDEAL_ALIGNMENT 64
 using detId_t = uint32_t;
-using fedId_t = uint16_t;
-using fedCh_t = uint8_t;
+//using fedId_t = uint16_t;
+//using fedCh_t = uint8_t;
 
 int main()
 {
   int max_strips = 1400000;
   detId_t *detId = (detId_t *)_mm_malloc(max_strips*sizeof(detId_t), IDEAL_ALIGNMENT);
-  fedId_t *fedId = (fedId_t *)_mm_malloc(max_strips*sizeof(fedId_t), IDEAL_ALIGNMENT);
-  fedCh_t *fedCh = (fedCh_t *)_mm_malloc(max_strips*sizeof(fedCh_t), IDEAL_ALIGNMENT);
+  //  fedId_t *fedId = (fedId_t *)_mm_malloc(max_strips*sizeof(fedId_t), IDEAL_ALIGNMENT);
+  //fedCh_t *fedCh = (fedCh_t *)_mm_malloc(max_strips*sizeof(fedCh_t), IDEAL_ALIGNMENT);
   uint16_t *stripId = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
   uint16_t *adc = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
   float *noise = (float *)_mm_malloc(max_strips*sizeof(float), IDEAL_ALIGNMENT);
@@ -28,27 +28,30 @@ int main()
   std::ifstream digidata_in("digidata.bin", std::ofstream::in | std::ios::binary);
   int i=0;
   while (digidata_in.read((char*)&detId[i], sizeof(detId_t)).gcount() == sizeof(detId_t)) {
-    digidata_in.read((char*)&fedId[i], sizeof(fedId_t));
-    digidata_in.read((char*)&fedCh[i], sizeof(fedCh_t));
+    //digidata_in.read((char*)&fedId[i], sizeof(fedId_t));
+    //digidata_in.read((char*)&fedCh[i], sizeof(fedCh_t));
     digidata_in.read((char*)&stripId[i], sizeof(uint16_t));
     digidata_in.read((char*)&adc[i], sizeof(uint16_t));
     digidata_in.read((char*)&noise[i], sizeof(float));
     digidata_in.read((char*)&gain[i], sizeof(float));
     digidata_in.read((char*)&bad[i], sizeof(bool));
     if (bad[i])
-      std::cout<<"detid "<<detId[i]<<" fedId "<<fedId[i]<<" fedCh "<<(int)fedCh[i]<<" stripId "<<stripId[i]<<
-      " adc "<<adc[i]<<" noise "<<noise[i]<<" gain "<<gain[i]<<" bad "<<bad[i]<<std::endl;
-
+      std::cout<<"index "<<i<<" detid "<<detId[i]<<" stripId "<<stripId[i]<<
+	" adc "<<adc[i]<<" noise "<<noise[i]<<" gain "<<gain[i]<<" bad "<<bad[i]<<std::endl;
     i++;
   }
   int nStrips=i;
 
-  double start = omp_get_wtime();
+  //double start = omp_get_wtime();
   float ChannelThreshold = 2.0, SeedThreshold = 3.0, ClusterThresholdSquared = 25.0;
   uint8_t MaxSequentialHoles = 0, MaxSequentialBad = 1, MaxAdjacentBad = 0;
   bool RemoveApvShots = true;
   float minGoodCharge = 1620.0;
 
+  for (int i=0; i<nStrips; i++) {
+    seedStripMask[i] = false;
+    seedStripNCMask[i] = false;
+  }
   // find the seed strips
   int nSeedStrips=0;
 #pragma omp parallel for
@@ -63,10 +66,11 @@ int main()
 
   int nSeedStripsNC=0;
   seedStripNCMask[0] = seedStripMask[0];
+  if (seedStripNCMask[0]) nSeedStripsNC++;
 #pragma omp parallel for
   for (int i=1; i<nStrips; i++) {
     if (seedStripMask[i] == true) {
-      if (stripId[i]-stripId[i-1]!=1) {
+      if (stripId[i]-stripId[i-1]!=1||((stripId[i]-stripId[i-1]==1)&&!seedStripMask[i-1])) {
 	seedStripNCMask[i] = true;
 #pragma omp atomic
 	nSeedStripsNC++;
@@ -91,7 +95,7 @@ int main()
     }
   }
 
-  if ((j-1)!=nSeedStripsNC) {
+  if (j!=nSeedStripsNC) {
     std::cout<<"j "<<j<<"nSeedStripsNC "<<nSeedStripsNC<<std::endl;
     exit (1);
   }
@@ -100,6 +104,9 @@ int main()
   for (int i=0; i<nSeedStripsNC; i++) {
     trueCluster[i] = false;
     clusterNoiseSquared[i] = 0;
+    //if (i<30)
+    //  std::cout<<"index "<<seedStripsNCIndex[i]<<"strip "<<stripId[seedStripsNCIndex[i]]<<
+    // 	" ADC "<<adc[seedStripsNCIndex[i]]<<std::endl;
   }
 
   // find the left and right bounday of the candidate cluster
@@ -114,19 +121,20 @@ int main()
     clusterNoiseSquared[i] += noise_i*noise_i;
     // find left boundary
     int testIndex=index-1;
-    while(index>0&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)<=MaxSequentialHoles)){
+    while(index>0&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)>=0)&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)<=MaxSequentialHoles)){
       float testNoise = noise[testIndex];
       uint8_t testADC = adc[testIndex];
       if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	--clusterLastIndexLeft[i];
 	clusterNoiseSquared[i] += testNoise*testNoise;
       }
+
       --testIndex;
     }
 
     // find right boundary
     testIndex=index+1;
-    while(testIndex<nStrips&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)<=MaxSequentialHoles)) {
+    while(testIndex<nStrips&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)>=0)&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)<=MaxSequentialHoles)) {
       float testNoise = noise[testIndex];
       uint8_t testADC = adc[testIndex];
       if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
@@ -135,6 +143,10 @@ int main()
       }
       ++testIndex;
     }
+
+    //if (i<30) {
+    //  std::cout<<"index "<<seedStripsNCIndex[i]<<" strip left "<<stripId[clusterLastIndexLeft[i]]<<"strip right "<<stripId[clusterLastIndexRight[i]]<<" test index "<<testIndex<<std::endl;
+    //}
   }
 
   // check if the candidate cluster is a true cluster
@@ -162,13 +174,13 @@ int main()
     }
   }
 
-  double end = omp_get_wtime();
+  //double end = omp_get_wtime();
 
   // print out the result
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
       int index = clusterLastIndexLeft[i];
-      std::cout<<"cluster "<<i<<" det Id "<<detId[index]<<" fed Id "<<fedId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<<" ADC ";
+      std::cout<<"cluster "<<i<<" det Id "<<detId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<<" seed strip "<<stripId[seedStripsNCIndex[i]]<<" ADC ";
       int left=clusterLastIndexLeft[i];
       int right=clusterLastIndexRight[i];
       int size=right-left+1;
@@ -178,10 +190,11 @@ int main()
       std::cout<<std::endl;
     }
   }
-  std::cout<<"clustering time "<<end-start<<std::endl;
+  //std::cout<<"clustering time "<<end-start<<std::endl;
 
   free(detId);
-  free(fedId);
+  //free(fedId);
+  //free(fedCh);
   free(stripId);
   free(adc);
   free(noise);
