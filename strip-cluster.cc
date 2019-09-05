@@ -78,7 +78,7 @@ int main()
     }
   }
 
-  std::cout<<"nStrips "<<nStrips<<"nSeedStrips "<<nSeedStrips<<"nSeedStripsNC "<<nSeedStripsNC<<std::endl;
+  //  std::cout<<"nStrips "<<nStrips<<"nSeedStrips "<<nSeedStrips<<"nSeedStripsNC "<<nSeedStripsNC<<std::endl;
 
   int *seedStripsNCIndex = (int *)_mm_malloc(nSeedStripsNC*sizeof(int), IDEAL_ALIGNMENT);
   int *clusterLastIndexLeft = (int *)_mm_malloc(nSeedStripsNC*sizeof(int), IDEAL_ALIGNMENT);
@@ -104,9 +104,6 @@ int main()
   for (int i=0; i<nSeedStripsNC; i++) {
     trueCluster[i] = false;
     clusterNoiseSquared[i] = 0;
-    //if (i<30)
-    //  std::cout<<"index "<<seedStripsNCIndex[i]<<"strip "<<stripId[seedStripsNCIndex[i]]<<
-    // 	" ADC "<<adc[seedStripsNCIndex[i]]<<std::endl;
   }
 
   // find the left and right bounday of the candidate cluster
@@ -124,11 +121,10 @@ int main()
     while(index>0&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)>=0)&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)<=MaxSequentialHoles)){
       float testNoise = noise[testIndex];
       uint8_t testADC = adc[testIndex];
-      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	--clusterLastIndexLeft[i];
 	clusterNoiseSquared[i] += testNoise*testNoise;
       }
-
       --testIndex;
     }
 
@@ -137,16 +133,12 @@ int main()
     while(testIndex<nStrips&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)>=0)&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)<=MaxSequentialHoles)) {
       float testNoise = noise[testIndex];
       uint8_t testADC = adc[testIndex];
-      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
         ++clusterLastIndexRight[i];
 	clusterNoiseSquared[i] += testNoise*testNoise;
       }
       ++testIndex;
     }
-
-    //if (i<30) {
-    //  std::cout<<"index "<<seedStripsNCIndex[i]<<" strip left "<<stripId[clusterLastIndexLeft[i]]<<"strip right "<<stripId[clusterLastIndexRight[i]]<<" test index "<<testIndex<<std::endl;
-    //}
   }
 
   // check if the candidate cluster is a true cluster
@@ -180,7 +172,8 @@ int main()
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
       int index = clusterLastIndexLeft[i];
-      std::cout<<"cluster "<<i<<" det Id "<<detId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<<" seed strip "<<stripId[seedStripsNCIndex[i]]<<" ADC ";
+      //std::cout<<"cluster "<<i<<" det Id "<<detId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<<" seed strip "<<stripId[seedStripsNCIndex[i]]<<" ADC ";
+      std::cout<<" det id "<<detId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<< ": ";
       int left=clusterLastIndexLeft[i];
       int right=clusterLastIndexRight[i];
       int size=right-left+1;
