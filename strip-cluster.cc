@@ -3,8 +3,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mm_malloc.h>
+#if _OPENMP
 #include <omp.h>
-
+#endif
 #define IDEAL_ALIGNMENT 64
 using detId_t = uint32_t;
 //using fedId_t = uint16_t;
@@ -42,7 +43,9 @@ int main()
   }
   int nStrips=i;
 
+#if _OPENMP
   double start = omp_get_wtime();
+#endif
   float ChannelThreshold = 2.0, SeedThreshold = 3.0, ClusterThresholdSquared = 25.0;
   uint8_t MaxSequentialHoles = 0, MaxSequentialBad = 1, MaxAdjacentBad = 0;
   bool RemoveApvShots = true;
@@ -96,16 +99,27 @@ int main()
     std::cout<<"j "<<j<<"nSeedStripsNC "<<nSeedStripsNC<<std::endl;
     exit (1);
   }
+  /*
+#pragma acc data copyin(clusterNoiseSquared[0:nSeedStripsNC],	\
+			seedStripsNCIndex[0:nSeedStripsNC],		\
+			clusterLastIndexLeft[0:nSeedStripsNC],		\
+			clusterLastIndexRight[0:nSeedStripsNC],		\
+			noise[0:nStrips],adc[0:nStrips],stripId[0:nStrips], \
+			gain[0:nStrips], bad[0:nStrips], seedStripsMask[0:nStrips], \
+			seedStripsNCMask[0:nStrips],			\
+			trueCluster[0:nSeedStripsNC],clusterADCs[0:256*nSeedStripsNC])
+  */
 
   // find the left and right bounday of the candidate cluster
   // (currently, we assume no bad strip. fix later)
-#pragma omp parallel for
+#pragma omp parallel for simd
+#pragma acc parallel loop independent
   for (int i=0; i<nSeedStripsNC; i++) {
     clusterNoiseSquared[i] = 0.0;
     int index=seedStripsNCIndex[i];
     clusterLastIndexLeft[i] = index;
     clusterLastIndexRight[i] = index;
-    uint8_t adc_i = adc[index];
+    //uint8_t adc_i = adc[index];
     float noise_i = noise[index];
     clusterNoiseSquared[i] += noise_i*noise_i;
     // find left boundary
@@ -135,7 +149,8 @@ int main()
 
   // check if the candidate cluster is a true cluster
   // if so, do some adjustment for the adc values
-#pragma omp parallel for
+#pragma omp parallel for simd
+#pragma acc parallel loop independent
   for (int i=0; i<nSeedStripsNC; i++){
     trueCluster[i] = false;
     int left=clusterLastIndexLeft[i];
@@ -158,9 +173,16 @@ int main()
       trueCluster[i] = true;
     }
   }
-
+#if _OPENMP
   double end = omp_get_wtime();
-  /*
+
+  std::cout<<"clustering time "<<end-start<<std::endl;
+#endif
+
+#pragma acc data copyout(trueCluster[0:nSeedStripsNC],	\
+			 clusterLastIndexLeft[0:nSeedStripsNC],	\
+			 clusterLastIndexRight[0:nSeedStripsNC],	\
+			 clusterADCs[0:256*nSeedStripsNC])
   // print out the result
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
@@ -176,9 +198,7 @@ int main()
       std::cout<<std::endl;
     }
   }
-  */
 
-  std::cout<<"clustering time "<<end-start<<std::endl;
 
   free(detId);
   //free(fedId);
