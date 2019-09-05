@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <mm_malloc.h>
-//#include <omp.h>
+#include <omp.h>
 
 #define IDEAL_ALIGNMENT 64
 using detId_t = uint32_t;
@@ -42,7 +42,7 @@ int main()
   }
   int nStrips=i;
 
-  //double start = omp_get_wtime();
+  double start = omp_get_wtime();
   float ChannelThreshold = 2.0, SeedThreshold = 3.0, ClusterThresholdSquared = 25.0;
   uint8_t MaxSequentialHoles = 0, MaxSequentialBad = 1, MaxAdjacentBad = 0;
   bool RemoveApvShots = true;
@@ -54,26 +54,23 @@ int main()
   }
   // find the seed strips
   int nSeedStrips=0;
-#pragma omp parallel for
+#pragma omp parallel for reduction(+:nSeedStrips)
   for (int i=0; i<nStrips; i++) {
     float noise_i = noise[i];
     uint8_t adc_i = static_cast<uint8_t>(adc[i]);
     seedStripMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? true:false;
-    if (seedStripMask[i] == true)
-#pragma omp atomic
-      nSeedStrips++;
+    nSeedStrips += static_cast<int>(seedStripMask[i]);
   }
 
   int nSeedStripsNC=0;
   seedStripNCMask[0] = seedStripMask[0];
   if (seedStripNCMask[0]) nSeedStripsNC++;
-#pragma omp parallel for
+#pragma omp parallel for reduction(+:nSeedStripsNC)
   for (int i=1; i<nStrips; i++) {
     if (seedStripMask[i] == true) {
       if (stripId[i]-stripId[i-1]!=1||((stripId[i]-stripId[i-1]==1)&&!seedStripMask[i-1])) {
 	seedStripNCMask[i] = true;
-#pragma omp atomic
-	nSeedStripsNC++;
+	nSeedStripsNC += static_cast<int>(seedStripNCMask[i]);
       }
     }
   }
@@ -100,16 +97,11 @@ int main()
     exit (1);
   }
 
-#pragma omp parallel for
-  for (int i=0; i<nSeedStripsNC; i++) {
-    trueCluster[i] = false;
-    clusterNoiseSquared[i] = 0;
-  }
-
   // find the left and right bounday of the candidate cluster
   // (currently, we assume no bad strip. fix later)
 #pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++) {
+    clusterNoiseSquared[i] = 0.0;
     int index=seedStripsNCIndex[i];
     clusterLastIndexLeft[i] = index;
     clusterLastIndexRight[i] = index;
@@ -145,6 +137,7 @@ int main()
   // if so, do some adjustment for the adc values
 #pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++){
+    trueCluster[i] = false;
     int left=clusterLastIndexLeft[i];
     int right=clusterLastIndexRight[i];
     int size=right-left+1;
@@ -166,8 +159,8 @@ int main()
     }
   }
 
-  //double end = omp_get_wtime();
-
+  double end = omp_get_wtime();
+  /*
   // print out the result
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
@@ -183,7 +176,9 @@ int main()
       std::cout<<std::endl;
     }
   }
-  //std::cout<<"clustering time "<<end-start<<std::endl;
+  */
+
+  std::cout<<"clustering time "<<end-start<<std::endl;
 
   free(detId);
   //free(fedId);
