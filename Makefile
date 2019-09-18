@@ -1,9 +1,9 @@
-
 CC = g++
 NVCC = nvcc 
 CXXFLAGS += -std=c++14 -fopenmp -O3 #-DUSE_GPU
-LDFLAGS += -std=c++14 -fopenmp -lcudart
-CUDAFLAGS += -std=c++14 -O3 -gencode=arch=compute_50,code=compute_50 --ptxas-options=v -I/home/beiwang/clustering/cub-1.8.0 #-DGPU_DEBUG
+LDFLAGS += -std=c++14 -fopenmp -lcudart 
+CUDAFLAGS += -std=c++14 -O3 -I/home/beiwang/clustering/cub-1.8.0 -gencode=arch=compute_60,code=\"sm_60,compute_60\" --ptxas-options=-v #-DGPU_DEBUG
+# -arch=sm_60 is equavalent to -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o
 	$(CC) $(LDFLAGS) -o strip-cluster strip-cluster.o cluster.o clusterGPU.o
