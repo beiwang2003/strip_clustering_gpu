@@ -10,12 +10,12 @@
 #endif
 
 typedef	struct {
-  double memTransferTime;
-  double setSeedStripsTime;
-  double setNCSeedStripsTime;
-  double setStripIndexTime;
-  double findBoundaryTime;
-  double checkClusterTime;
+  float memTransferTime;
+  float setSeedStripsTime;
+  float setNCSeedStripsTime;
+  float setStripIndexTime;
+  float findBoundaryTime;
+  float checkClusterTime;
   cudaEvent_t start, stop;
 } gpu_timing_t;
 

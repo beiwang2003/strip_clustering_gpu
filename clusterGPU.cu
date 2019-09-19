@@ -2,32 +2,35 @@
 #include <cub/cub.cuh>
 #include <stdio.h>
 
-void gpu_timer_start(gpu_timing_t *gpu_timing)
+static void gpu_timer_start(gpu_timing_t *gpu_timing)
 {
   cudaEventCreate(&gpu_timing->start);
   cudaEventCreate(&gpu_timing->stop);
   cudaEventRecord(gpu_timing->start,0);
 }
 
-float gpu_timer_measure(gpu_timing_t *gpu_timing)
+static float gpu_timer_measure(gpu_timing_t *gpu_timing)
 {
   float elapsedTime;
   cudaEventRecord(gpu_timing->stop,0);
   cudaEventSynchronize(gpu_timing->stop);
   cudaEventElapsedTime(&elapsedTime, gpu_timing->start, gpu_timing->stop);
 
-  cudaEvent_t temp = gpu_timing->start;
-  gpu_timing->start = gpu_timing->stop;
-  gpu_timing->stop = temp;
+  //  cudaEvent_t temp = gpu_timing->start;
+  //gpu_timing->start = gpu_timing->stop;
+  //gpu_timing->stop = temp;
+  cudaEventRecord(gpu_timing->start,0);
+
   return elapsedTime/1000;
 }
 
-float gpu_timer_measure_end(gpu_timing_t *gpu_timing)
+static float gpu_timer_measure_end(gpu_timing_t *gpu_timing)
 {
   float elapsedTime;
-  cudaEventRecord(gpu_timing->stop);
+  cudaEventRecord(gpu_timing->stop,0);
   cudaEventSynchronize(gpu_timing->stop);
   cudaEventElapsedTime(&elapsedTime, gpu_timing->start,gpu_timing->stop);
+
   cudaEventDestroy(gpu_timing->start);
   cudaEventDestroy(gpu_timing->stop);
   return elapsedTime/1000;
@@ -362,15 +365,13 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
   free(cpu_noise);
 #endif
 
+  // set mask for seed strips
   setSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, noise_d, adc_d, seedStripsMask_d, seedStripsNCMask_d);
-
   gpu_timing->setSeedStripsTime = gpu_timer_measure(gpu_timing);
 
-  //cudaDeviceSynchronize();
 
+  // set mask for non-consecutive seed strips
   setNCSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, stripId_d, seedStripsMask_d, seedStripsNCMask_d);
-
-  //cudaDeviceSynchronize();
   gpu_timing->setNCSeedStripsTime = gpu_timer_measure(gpu_timing);
 
 #ifdef GPU_DEBUG
@@ -382,9 +383,8 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
   }
 #endif
 
+  // set index for non-consecutive seed strips
   cub::DeviceScan::ExclusiveSum(d_temp_storage, temp_storage_bytes, seedStripsNCMask_d, prefixSeedStripsNCMask_d, nStrips);
-
-  cudaDeviceSynchronize();
 
   cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
@@ -394,7 +394,7 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
 
   setStripIndexGPU<<<nblocks, nthreads>>>(nStrips, seedStripsNCMask_d, prefixSeedStripsNCMask_d, seedStripsNCIndex_d);
 
-  gpu_timing->setStripIndexTime = gpu_timer_measure_end(gpu_timing);
+  cudaFree(d_temp_storage);
 
 #ifdef GPU_DEBUG
   cudaMemcpy((void *)cpu_mask, seedStripsNCMask_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
@@ -411,8 +411,9 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
   std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<"temp_storage_bytes="<<temp_storage_bytes<<std::endl;
 #endif
 
-  cudaFree(d_temp_storage);
   cudaFree(seedStripsMask_d);
+
+  gpu_timing->setStripIndexTime = gpu_timer_measure_end(gpu_timing);
 
   return nSeedStripsNC;
 }

@@ -95,7 +95,7 @@ int main()
 
 #if _OPENMP
   double t4 = omp_get_wtime();
-  std::cout<<"Time: setStripIndex "<<t2-t1<<" clustering "<<t4-t3<<std::endl;
+  std::cout<<"Time: setStripIndex "<<t2-t1<<" clustering "<<t4-t3<< " total "<<t4-t1<<std::endl;
 #endif
 
 #ifdef USE_GPU
