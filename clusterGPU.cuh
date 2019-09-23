@@ -23,7 +23,7 @@ void allocateMemAllStripsGPU(int max_strips, uint16_t **stripId_d_pt, uint16_t *
 
 void allocateMemNCSeedStripsGPU(int nSeedStripsNC, int **clusterLastIndexLeft_d_pt, int **clusterLastIndexRight_d_pt, float **clusterNoiseSquared_d_pt, uint8_t **clusterADCs_d_pt, bool **trueCluster_d_pt);
 
-void freeGPUMem(uint16_t *stripId_d, float *noise_d, int *seedStripNCIndex_d, int *clusterLastIndexLeft_d, float *clusterNoiseSquared_d, uint8_t *clusterADCs_d, bool *trueCluster_d);
+void freeGPUMem(uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gain_d, int *seedStripNCIndex_d, int *clusterLastIndexLeft_d, float *clusterNoiseSquared_d, uint8_t *clusterADCs_d, bool *trueCluster_d);
 
 void cpyCPUToGPU(int nStrips, uint16_t *stripId_d, uint16_t *stripId, uint16_t *adc_d,  uint16_t *adc, float *noise_d, float *noise, float *gain_d, float *gain, gpu_timing_t *gpu_timing);
 

@@ -90,7 +90,6 @@ int main()
   findClusterGPU(nSeedStripsNC, nStrips, clusterNoiseSquared_d, clusterLastIndexLeft_d, clusterLastIndexRight_d, seedStripsNCIndex_d, stripId_d, adc_d, noise_d, gain_d, trueCluster_d, clusterADCs_d, gpu_timing);
 #else
   findCluster(nSeedStripsNC, nStrips, clusterNoiseSquared, clusterLastIndexLeft, clusterLastIndexRight, seedStripsNCIndex, stripId, adc, noise, gain, trueCluster, clusterADCs);
-
 #endif
 
 #if _OPENMP
@@ -129,7 +128,7 @@ int main()
 
 #ifdef USE_GPU
   free(gpu_timing);
-  freeGPUMem(stripId_d, noise_d, seedStripsNCIndex_d, clusterLastIndexLeft_d, clusterNoiseSquared_d, clusterADCs_d, trueCluster_d);
+  freeGPUMem(stripId_d, adc_d, noise_d, gain_d, seedStripsNCIndex_d, clusterLastIndexLeft_d, clusterNoiseSquared_d, clusterADCs_d, trueCluster_d);
 #endif
 
   freeMem(detId, stripId, adc, noise, gain, bad, seedStripsNCIndex, clusterLastIndexLeft, clusterLastIndexRight, clusterNoiseSquared, clusterADCs, trueCluster);
