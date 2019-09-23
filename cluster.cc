@@ -1,5 +1,7 @@
 #include "cluster.h"
 #include <mm_malloc.h>
+#include <tgmath.h>
+#include <iostream>
 
 void allocateMemAllStrips(int max_strips, detId_t **detId_pt, uint16_t **stripId_pt, uint16_t **adc_pt, float **noise_pt, float **gain_pt, bool **bad_pt, int **seedStripsNCIndex_pt)
 {
@@ -39,61 +41,82 @@ void freeMem(detId_t *detId, uint16_t *stripId, uint16_t *adc, float* noise, flo
 }
 
 int setSeedStripsNCIndex(int nStrips, uint16_t *stripId, uint16_t *adc, float *noise, int *seedStripsNCIndex) {
-  int nSeedStripsNC, j;
+  int nSeedStripsNC, j, nStripsP2;
+  nStripsP2 = pow(2, floor(log2(nStrips)) + 1);
 
   bool *seedStripMask = (bool *)_mm_malloc(nStrips*sizeof(bool), IDEAL_ALIGNMENT);
   bool *seedStripNCMask  = (bool *)_mm_malloc(nStrips*sizeof(bool), IDEAL_ALIGNMENT);
+  int *prefixSeedStripNCMask = (int *)_mm_malloc(nStripsP2*sizeof(int), IDEAL_ALIGNMENT);
 
   float SeedThreshold = 3.0;
 
-  for (int i=0; i<nStrips; i++) {
-    seedStripMask[i] = false;
-    seedStripNCMask[i] = false;
+#pragma omp parallel for
+  for (int i=0; i<nStripsP2; i++) {
+    prefixSeedStripNCMask[i] = 0;
   }
 
-  // find the seed strips
-  //  nSeedStrips=0;
+  // mark seed strips
 #pragma omp parallel for
   for (int i=0; i<nStrips; i++) {
     float noise_i = noise[i];
     uint8_t adc_i = static_cast<uint8_t>(adc[i]);
     seedStripMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? true:false;
-    //nSeedStrips += static_cast<int>(seedStripMask[i]);
     seedStripNCMask[i] = seedStripMask[i];
   }
 
-  /*
-  // find NC seed strips
-  nSeedStripsNC=0;
-  seedStripNCMask[0] = seedStripMask[0];
-  if (seedStripNCMask[0]) nSeedStripsNC++;
-#pragma omp parallel for reduction(+:nSeedStripsNC)
-  for (int i=1; i<nStrips; i++) {
-    if (seedStripMask[i] == true) {
-      if (stripId[i]-stripId[i-1]!=1||((stripId[i]-stripId[i-1]==1)&&!seedStripMask[i-1])) {
-        seedStripNCMask[i] = true;
-        nSeedStripsNC += static_cast<int>(seedStripNCMask[i]);
-      }
-    }
-  }
-  */
-  nSeedStripsNC = static_cast<int>(seedStripNCMask[0]);
-#pragma omp parallel for reduction(+:nSeedStripsNC)
+  // mark only non-consecutive seed strips (mask out consecutive seed strips)
+  prefixSeedStripNCMask[0] = static_cast<int>(seedStripNCMask[0]);
+#pragma omp parallel for
   for (int i=1; i<nStrips; i++) {
     if (seedStripMask[i]&&seedStripMask[i-1]&&(stripId[i]-stripId[i-1])==1) seedStripNCMask[i] = false;
-    nSeedStripsNC += static_cast<int>(seedStripNCMask[i]);
+    int mask = static_cast<int>(seedStripNCMask[i]);
+    prefixSeedStripNCMask[i] = mask;
   }
 
-  j=0;
-  for (int i=0; i<nStrips; i++) {
-    if (seedStripNCMask[i] == true) {
-      seedStripsNCIndex[j] = i;
-      j++;
+  // set index for non-consecutive seed strips
+  // parallel prefix sum implementation
+  // The up-sweep (reduce) phase of a work-efficient sum scan algorithm
+  for (int d=0; d<log2(nStripsP2); d++) {
+    int stride = pow(2, d);
+    int stride2 = 2*stride;
+#pragma omp parallel for
+    for (int k=0; k<nStripsP2; k+=stride2) {
+      prefixSeedStripNCMask[k+stride2-1] += prefixSeedStripNCMask[k+stride-1];
     }
   }
+
+  // The down-sweep phase of a work-efficient sum scan algorithm
+  nSeedStripsNC = prefixSeedStripNCMask[nStripsP2-1];
+  prefixSeedStripNCMask[nStripsP2-1] = 0;
+  for (int d=log2(nStripsP2)-1; d>=0; d--) {
+    int stride = pow(2, d);
+    int stride2 = 2*stride;
+#pragma omp parallel for
+    for (int k=0; k<nStripsP2; k+=stride2){
+      int temp = prefixSeedStripNCMask[k+stride-1];
+      prefixSeedStripNCMask[k+stride-1] = prefixSeedStripNCMask[k+stride2-1];
+      prefixSeedStripNCMask[k+stride2-1] += temp;
+    }
+  }
+
+#pragma omp parallel for
+  for (int i=0; i<nStrips; i++) {
+    if (seedStripNCMask[i]) {
+      int index = prefixSeedStripNCMask[i];
+      seedStripsNCIndex[index] = i;
+    }
+  }
+
+#ifdef CPU_DEBUG
+  for (int i=0; i<nStrips; i++) {
+    std::cout<<" i "<<i<<" mask "<<seedStripNCMask[i]<<" prefix "<<prefixSeedStripNCMask[i]<<" index "<<seedStripsNCIndex[i]<<std::endl;
+  }
+  std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+#endif
 
   free(seedStripMask);
   free(seedStripNCMask);
+  free(prefixSeedStripNCMask);
 
   return nSeedStripsNC;
 
@@ -107,18 +130,18 @@ static void findLeftRightBoundary(int nSeedStripsNC, int nStrips, float* cluster
   for (int i=0; i<nSeedStripsNC; i++) {
     clusterNoiseSquared[i] = 0.0;
     int index=seedStripsNCIndex[i];
-    clusterLastIndexLeft[i] = index;
-    clusterLastIndexRight[i] = index;
-    //uint8_t adc_i = adc[index];
+    int indexLeft = index;
+    int indexRight = index;
     float noise_i = noise[index];
     clusterNoiseSquared[i] += noise_i*noise_i;
+
     // find left boundary
     int testIndex=index-1;
-    while(index>0&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)>=0)&&((stripId[clusterLastIndexLeft[i]]-stripId[testIndex]-1)<=MaxSequentialHoles)){
+    while(index>0&&((stripId[indexLeft]-stripId[testIndex]-1)>=0)&&((stripId[indexLeft]-stripId[testIndex]-1)<=MaxSequentialHoles)){
       float testNoise = noise[testIndex];
       uint8_t testADC = static_cast<uint8_t>(adc[testIndex]);
       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-        --clusterLastIndexLeft[i];
+	--indexLeft;
         clusterNoiseSquared[i] += testNoise*testNoise;
       }
       --testIndex;
@@ -126,15 +149,18 @@ static void findLeftRightBoundary(int nSeedStripsNC, int nStrips, float* cluster
 
     // find right boundary
     testIndex=index+1;
-    while(testIndex<nStrips&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)>=0)&&((stripId[testIndex]-stripId[clusterLastIndexRight[i]]-1)<=MaxSequentialHoles)) {
+    while(testIndex<nStrips&&((stripId[testIndex]-stripId[indexRight]-1)>=0)&&((stripId[testIndex]-stripId[indexRight]-1)<=MaxSequentialHoles)) {
       float testNoise = noise[testIndex];
       uint8_t testADC = static_cast<uint8_t>(adc[testIndex]);
       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-        ++clusterLastIndexRight[i];
+	++indexRight;
         clusterNoiseSquared[i] += testNoise*testNoise;
       }
       ++testIndex;
     }
+
+    clusterLastIndexLeft[i] = indexLeft;
+    clusterLastIndexRight[i] = indexRight;
   }
 }
 

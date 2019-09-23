@@ -106,52 +106,40 @@ static void findLeftRightBoundaryGPU(int nSeedStripsNC, int nStrips, float* clus
 
    if (i<nSeedStripsNC) {
 
-    clusterNoiseSquared_d[i] = 0.0;
-    index=seedStripsNCIndex_d[i];
-    //if (index>=nStrips||index<0) printf("index out of range %d\n", index);
-    //clusterLastIndexLeft_d[i] = index;
-    //clusterLastIndexRight_d[i] = index;
-    indexLeft = index;
-    indexRight = index;
-    noise_i = noise_d[index];
-    clusterNoiseSquared_d[i] += noise_i*noise_i;
+     clusterNoiseSquared_d[i] = 0.0;
+     index=seedStripsNCIndex_d[i];
+     indexLeft = index;
+     indexRight = index;
+     noise_i = noise_d[index];
+     clusterNoiseSquared_d[i] += noise_i*noise_i;
 
-    // find left boundary
-    testIndexLeft=index-1;
-    //while(testIndexLeft>=0&&((stripId_d[clusterLastIndexLeft_d[i]]-stripId_d[testIndexLeft]-1)>=0)&&((stripId_d[clusterLastIndexLeft_d[i]]-stripId_d[testIndexLeft]-1)<=MaxSequentialHoles)){
-    while(testIndexLeft>=0&&((stripId_d[indexLeft]-stripId_d[testIndexLeft]-1)>=0)&&((stripId_d[indexLeft]-stripId_d[testIndexLeft]-1)<=MaxSequentialHoles)){
-      testNoise = noise_d[testIndexLeft];
-      testADC = static_cast<uint8_t>(adc_d[testIndexLeft]);
-      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-        //--clusterLastIndexLeft_d[i];
-	--indexLeft;
-        clusterNoiseSquared_d[i] += testNoise*testNoise;
-      }
-      --testIndexLeft;
+     // find left boundary
+     testIndexLeft=index-1;
+     while(testIndexLeft>=0&&((stripId_d[indexLeft]-stripId_d[testIndexLeft]-1)>=0)&&((stripId_d[indexLeft]-stripId_d[testIndexLeft]-1)<=MaxSequentialHoles)){
+       testNoise = noise_d[testIndexLeft];
+       testADC = static_cast<uint8_t>(adc_d[testIndexLeft]);
+       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	 --indexLeft;
+	 clusterNoiseSquared_d[i] += testNoise*testNoise;
+       }
+       --testIndexLeft;
+     }
 
-      //if (testIndexLeft>=nStrips||testIndexLeft<0) printf("testleft index out of range %d\n", testIndexLeft);
-      //if (clusterLastIndexLeft_d[i]>=nStrips||clusterLastIndexLeft_d[i]<0) printf("left index out of range %d\n", clusterLastIndexLeft_d[i]);
-    }
+     // find right boundary
+     testIndexRight=index+1;
+     while(testIndexRight<nStrips&&((stripId_d[testIndexRight]-stripId_d[indexRight]-1)>=0)&&((stripId_d[testIndexRight]-stripId_d[indexRight]-1)<=MaxSequentialHoles)) {
+       testNoise = noise_d[testIndexRight];
+       testADC = static_cast<uint8_t>(adc_d[testIndexRight]);
+       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	 ++indexRight;
+	 clusterNoiseSquared_d[i] += testNoise*testNoise;
+       }
+       ++testIndexRight;
+     }
 
-    // find right boundary
-    testIndexRight=index+1;
-    //while(testIndexRight<nStrips&&((stripId_d[testIndexRight]-stripId_d[clusterLastIndexRight_d[i]]-1)>=0)&&((stripId_d[testIndexRight]-stripId_d[clusterLastIndexRight_d[i]]-1)<=MaxSequentialHoles)) {
-    while(testIndexRight<nStrips&&((stripId_d[testIndexRight]-stripId_d[indexRight]-1)>=0)&&((stripId_d[testIndexRight]-stripId_d[indexRight]-1)<=MaxSequentialHoles)) {
-      testNoise = noise_d[testIndexRight];
-      testADC = static_cast<uint8_t>(adc_d[testIndexRight]);
-      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-        //++clusterLastIndexRight_d[i];
-	++indexRight;
-        clusterNoiseSquared_d[i] += testNoise*testNoise;
-      }
-      ++testIndexRight;
-
-      //if (testIndexRight>nStrips||testIndexRight<0) printf("testright index out of range %d\n", testIndexRight);
-      //if (clusterLastIndexRight_d[i]>=nStrips||clusterLastIndexRight_d[i]<0) printf("left index out of range %d\n", clusterLastIndexRight_d[i]);
-    }
-    clusterLastIndexLeft_d[i] = indexLeft;
-    clusterLastIndexRight_d[i] = indexRight;
-  }
+     clusterLastIndexLeft_d[i] = indexLeft;
+     clusterLastIndexRight_d[i] = indexRight;
+   }
 }
 
 __global__
@@ -347,41 +335,14 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
   int nthreads = 256;
   int nblocks = (nStrips+nthreads-1)/nthreads;
 
-#ifdef GPU_DEBUG
-  uint16_t *cpu_strip = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
-  uint16_t *cpu_adc = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
-  float *cpu_noise = (float *)malloc(nStrips*sizeof(float));
-
-  cudaMemcpy((void *)cpu_strip, stripId_d, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)cpu_adc, adc_d, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)cpu_noise, noise_d, nStrips*sizeof(float), cudaMemcpyDeviceToHost);
-
-  for (int i=0; i<nStrips; i++) {
-    std::cout<<" i "<<i<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<cpu_adc[i]<<" cpu_noise "<<cpu_noise[i]<<std::endl;
-  }
-
-  free(cpu_strip);
-  free(cpu_adc);
-  free(cpu_noise);
-#endif
-
-  // set mask for seed strips
+  // mark seed strips
   setSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, noise_d, adc_d, seedStripsMask_d, seedStripsNCMask_d);
   gpu_timing->setSeedStripsTime = gpu_timer_measure(gpu_timing);
 
 
-  // set mask for non-consecutive seed strips
+  // mark only non-consecutive seed strips (mask out consecutive seed strips)
   setNCSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, stripId_d, seedStripsMask_d, seedStripsNCMask_d);
   gpu_timing->setNCSeedStripsTime = gpu_timer_measure(gpu_timing);
-
-#ifdef GPU_DEBUG
-  cudaMemcpy((void *)cpu_prefix, prefixSeedStripsNCMask_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)cpu_mask, seedStripsMask_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
-
-  for (int i=0; i<nStrips; i++) {
-    std::cout<<" i "<<i<<" mask "<<cpu_mask[i]<<" prefix "<<cpu_prefix[i]<<std::endl;
-  }
-#endif
 
   // set index for non-consecutive seed strips
   cub::DeviceScan::ExclusiveSum(d_temp_storage, temp_storage_bytes, seedStripsNCMask_d, prefixSeedStripsNCMask_d, nStrips);
@@ -398,10 +359,11 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
 
 #ifdef GPU_DEBUG
   cudaMemcpy((void *)cpu_mask, seedStripsNCMask_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpy((void *)cpu_prefix, prefixSeedStripsNCMask_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)cpu_index, seedStripsNCIndex_d, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
 
   for (int i=0; i<nStrips; i++) {
-    std::cout<<" i "<<i<<" NC mask "<<cpu_mask[i]<<" index "<<cpu_index[i]<<std::endl;
+    std::cout<<" i "<<i<<" mask "<<cpu_mask[i]<<" prefix "<<cpu_prefix[i]<<" index "<<cpu_index[i]<<std::endl;
   }
 
   free(cpu_mask);
