@@ -9,6 +9,8 @@
    extern "C" {
 #endif
 
+#define USE_TEXTURE 1
+
 typedef	struct {
   float memTransferTime;
   float setSeedStripsTime;

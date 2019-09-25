@@ -2,7 +2,7 @@
 #include <cub/cub.cuh>
 #include <stdio.h>
 
-#ifdef USE_TEXTURE
+#if USE_TEXTURE
 texture<float, 1, cudaReadModeElementType> noiseTexRef;
 texture<float, 1, cudaReadModeElementType> gainTexRef;
 texture<uint16_t, 1, cudaReadModeElementType> stripIdTexRef;
@@ -254,7 +254,7 @@ void freeGPUMem(uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gai
    cudaFree(adc_d);
    cudaFree(noise_d);
    cudaFree(gain_d);
-#ifdef USE_TEXTURE
+#if USE_TEXTURE
    cudaUnbindTexture(stripIdTexRef);
    cudaUnbindTexture(adcTexRef);
    cudaUnbindTexture(noiseTexRef);
@@ -446,7 +446,7 @@ void cpyCPUToGPU(int nStrips, uint16_t *stripId_d, uint16_t *stripId, uint16_t *
   cudaMemcpy((void *)adc_d, adc, nStrips*sizeof(uint16_t), cudaMemcpyHostToDevice);
   cudaMemcpy((void *)noise_d, noise, nStrips*sizeof(float), cudaMemcpyHostToDevice);
   cudaMemcpy((void *)gain_d, gain, nStrips*sizeof(float), cudaMemcpyHostToDevice);
-#ifdef USE_TEXTURE
+#if USE_TEXTURE
   cudaBindTexture(0, stripIdTexRef, (void *)stripId_d, nStrips*sizeof(uint16_t));
   cudaBindTexture(0, adcTexRef, (void *)adc_d, nStrips*sizeof(uint16_t));
   cudaBindTexture(0, noiseTexRef, (void *)noise_d, nStrips*sizeof(float));

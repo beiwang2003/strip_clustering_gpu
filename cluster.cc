@@ -1,7 +1,7 @@
 #include "cluster.h"
 #include <mm_malloc.h>
-#include <tgmath.h>
 #include <iostream>
+#include <cmath>
 
 void allocateMemAllStrips(int max_strips, detId_t **detId_pt, uint16_t **stripId_pt, uint16_t **adc_pt, float **noise_pt, float **gain_pt, bool **bad_pt, int **seedStripsNCIndex_pt)
 {
@@ -40,76 +40,103 @@ void freeMem(detId_t *detId, uint16_t *stripId, uint16_t *adc, float* noise, flo
   free(trueCluster);
 }
 
-int setSeedStripsNCIndex(int nStrips, uint16_t *stripId, uint16_t *adc, float *noise, int *seedStripsNCIndex) {
-  int nSeedStripsNC, j, nStripsP2;
-  nStripsP2 = pow(2, floor(log2(nStrips)) + 1);
+int setSeedStripsNCIndex(int nStrips, uint16_t *stripId, uint16_t *adc, float *noise, int *seedStripsNCIndex, cpu_timing_t *cpu_timing) {
+  int nSeedStripsNC, j;
+  int nStripsP2 = std::pow(2, std::floor(std::log2(nStrips))+1);
+  int depth = std::log2(nStripsP2);
 
-  bool *seedStripMask = (bool *)_mm_malloc(nStrips*sizeof(bool), IDEAL_ALIGNMENT);
-  bool *seedStripNCMask  = (bool *)_mm_malloc(nStrips*sizeof(bool), IDEAL_ALIGNMENT);
+  int *seedStripMask = (int *)_mm_malloc(nStrips*sizeof(int), IDEAL_ALIGNMENT);
+  int *seedStripNCMask  = (int *)_mm_malloc(nStrips*sizeof(int), IDEAL_ALIGNMENT);
   int *prefixSeedStripNCMask = (int *)_mm_malloc(nStripsP2*sizeof(int), IDEAL_ALIGNMENT);
 
   float SeedThreshold = 3.0;
+  double t0, t1;
 
-#pragma omp parallel for
-  for (int i=0; i<nStripsP2; i++) {
-    prefixSeedStripNCMask[i] = 0;
-  }
-
-  // mark seed strips
-#pragma omp parallel for
-  for (int i=0; i<nStrips; i++) {
-    float noise_i = noise[i];
-    uint8_t adc_i = static_cast<uint8_t>(adc[i]);
-    seedStripMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? true:false;
-    seedStripNCMask[i] = seedStripMask[i];
-  }
-
-  // mark only non-consecutive seed strips (mask out consecutive seed strips)
-  prefixSeedStripNCMask[0] = static_cast<int>(seedStripNCMask[0]);
-#pragma omp parallel for
-  for (int i=1; i<nStrips; i++) {
-    if (seedStripMask[i]&&seedStripMask[i-1]&&(stripId[i]-stripId[i-1])==1) seedStripNCMask[i] = false;
-    int mask = static_cast<int>(seedStripNCMask[i]);
-    prefixSeedStripNCMask[i] = mask;
-  }
-
-  // set index for non-consecutive seed strips
-  // parallel prefix sum implementation
-  // The up-sweep (reduce) phase of a work-efficient sum scan algorithm
-  for (int d=0; d<log2(nStripsP2); d++) {
-    int stride = pow(2, d);
-    int stride2 = 2*stride;
-#pragma omp parallel for
-    for (int k=0; k<nStripsP2; k+=stride2) {
-      prefixSeedStripNCMask[k+stride2-1] += prefixSeedStripNCMask[k+stride-1];
+#pragma omp parallel
+  {
+#pragma omp single
+    t0 = omp_get_wtime();
+    // mark seed strips
+#pragma omp for simd aligned(noise,seedStripMask,seedStripNCMask,prefixSeedStripNCMask: CACHELINE_BYTES)
+    for (int i=0; i<nStrips; i++) {
+      float noise_i = noise[i];
+      uint8_t adc_i = static_cast<uint8_t>(adc[i]);
+      seedStripMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? 1:0;
+      seedStripNCMask[i] = seedStripMask[i];
+      prefixSeedStripNCMask[i] = 0;
     }
-  }
 
-  // The down-sweep phase of a work-efficient sum scan algorithm
-  nSeedStripsNC = prefixSeedStripNCMask[nStripsP2-1];
-  prefixSeedStripNCMask[nStripsP2-1] = 0;
-  for (int d=log2(nStripsP2)-1; d>=0; d--) {
-    int stride = pow(2, d);
-    int stride2 = 2*stride;
-#pragma omp parallel for
-    for (int k=0; k<nStripsP2; k+=stride2){
-      int temp = prefixSeedStripNCMask[k+stride-1];
-      prefixSeedStripNCMask[k+stride-1] = prefixSeedStripNCMask[k+stride2-1];
-      prefixSeedStripNCMask[k+stride2-1] += temp;
+#pragma omp for
+    for (int i=nStrips; i<nStripsP2; i++) {
+      prefixSeedStripNCMask[i] = 0;
     }
-  }
 
-#pragma omp parallel for
-  for (int i=0; i<nStrips; i++) {
-    if (seedStripNCMask[i]) {
-      int index = prefixSeedStripNCMask[i];
-      seedStripsNCIndex[index] = i;
+#pragma omp single
+    {
+      t1 = omp_get_wtime();
+      cpu_timing->setSeedStripsTime = t1 - t0;
     }
+
+    // mark only non-consecutive seed strips (mask out consecutive seed strips)
+#pragma omp for simd aligned(seedStripNCMask,prefixSeedStripNCMask: CACHELINE_BYTES)
+    for (int i=0; i<nStrips; i++) {
+      int mask = seedStripNCMask[i];
+      if (i>0&&seedStripMask[i]&&seedStripMask[i-1]&&(stripId[i]-stripId[i-1])==1) mask = 0;
+      prefixSeedStripNCMask[i] = mask;
+      seedStripNCMask[i] = mask;
+    }
+
+#pragma omp single
+    {
+      t0 = omp_get_wtime();
+      cpu_timing->setNCSeedStripsTime = t0 - t1;
+    }
+
+    // set index for non-consecutive seed strips
+    // parallel prefix sum implementation
+    // The up-sweep (reduce) phase of a work-efficient sum scan algorithm
+    for (int d=0; d<depth; d++) {
+      int stride = std::pow(2, d);
+      int stride2 = 2*stride;
+#pragma omp for
+      for (int k=0; k<nStripsP2; k+=stride2) {
+	prefixSeedStripNCMask[k+stride2-1] += prefixSeedStripNCMask[k+stride-1];
+      }
+    }
+
+    // The down-sweep phase of a work-efficient sum scan algorithm
+#pragma omp single
+    {
+      nSeedStripsNC = prefixSeedStripNCMask[nStripsP2-1];
+      prefixSeedStripNCMask[nStripsP2-1] = 0;
+    }
+    for (int d=depth-1; d>=0; d--) {
+      int stride = std::pow(2, d);
+      int stride2 = 2*stride;
+#pragma omp for
+      for (int k=0; k<nStripsP2; k+=stride2){
+	int temp = prefixSeedStripNCMask[k+stride-1];
+	prefixSeedStripNCMask[k+stride-1] = prefixSeedStripNCMask[k+stride2-1];
+	prefixSeedStripNCMask[k+stride2-1] += temp;
+      }
+    }
+
+#pragma omp for
+    for (int i=0; i<nStrips; i++) {
+      if (seedStripNCMask[i]) {
+	int index = prefixSeedStripNCMask[i];
+	seedStripsNCIndex[index] = i;
+      }
+    }
+
+#pragma omp single
+    cpu_timing->setStripIndexTime = omp_get_wtime() - t0;
   }
 
 #ifdef CPU_DEBUG
   for (int i=0; i<nStrips; i++) {
-    std::cout<<" i "<<i<<" mask "<<seedStripNCMask[i]<<" prefix "<<prefixSeedStripNCMask[i]<<" index "<<seedStripsNCIndex[i]<<std::endl;
+    if (seedStripNCMask[i])
+      std::cout<<" i "<<i<<" mask "<<seedStripNCMask[i]<<" prefix "<<prefixSeedStripNCMask[i]<<" index "<<seedStripsNCIndex[i]<<std::endl;
   }
   std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #endif
@@ -192,11 +219,13 @@ static void checkClusterCondition(int nSeedStripsNC, float* clusterNoiseSquared,
   }
 }
 
-void findCluster(int nSeedStripsNC, int nStrips, float* clusterNoiseSquared, int *clusterLastIndexLeft, int *clusterLastIndexRight, int *seedStripsNCIndex, uint16_t *stripId, uint16_t *adc, float *noise, float *gain, bool *trueCluster, uint8_t *clusterADCs)
+void findCluster(int nSeedStripsNC, int nStrips, float* clusterNoiseSquared, int *clusterLastIndexLeft, int *clusterLastIndexRight, int *seedStripsNCIndex, uint16_t *stripId, uint16_t *adc, float *noise, float *gain, bool *trueCluster, uint8_t *clusterADCs, cpu_timing_t* cpu_timing)
 {
-
+  double t0 = omp_get_wtime();
   findLeftRightBoundary(nSeedStripsNC, nStrips, clusterNoiseSquared, clusterLastIndexLeft, clusterLastIndexRight, seedStripsNCIndex, stripId, adc, noise);
+  double t1 = omp_get_wtime();
+  cpu_timing->findBoundaryTime = t1 - t0;
 
   checkClusterCondition(nSeedStripsNC, clusterNoiseSquared, clusterLastIndexLeft, clusterLastIndexRight, adc, gain, trueCluster, clusterADCs);
-
+  cpu_timing->checkClusterTime = omp_get_wtime() - t1;
 }
