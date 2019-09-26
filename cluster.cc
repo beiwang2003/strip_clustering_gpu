@@ -203,7 +203,7 @@ static void findLeftRightBoundary(int nSeedStripsNC, int nStrips, int *clusterLa
     bool noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;
     bool chargePerCMPass = adcSum_i/0.047f > minGoodCharge;
 
-    trueCluster[i] = noiseSquaredPass&chargePerCMPass;
+    trueCluster[i] = noiseSquaredPass&&chargePerCMPass;
     clusterLastIndexLeft[i] = indexLeft;
     clusterLastIndexRight[i] = indexRight;
   }

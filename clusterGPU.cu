@@ -182,7 +182,7 @@ static void findLeftRightBoundaryGPU(int nSeedStripsNC, int nStrips, int *cluste
      noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;
      chargePerCMPass = adcSum_i/0.047f > minGoodCharge;
 
-     trueCluster_d[i] = noiseSquaredPass&chargePerCMPass;
+     trueCluster_d[i] = noiseSquaredPass&&chargePerCMPass;
      clusterLastIndexLeft_d[i] = indexLeft;
      clusterLastIndexRight_d[i] = indexRight;
    }
