@@ -1,10 +1,10 @@
-#CC = g++
-#CXXFLAGS += -std=c++14 -march=native -fopenmp -O3 -DOUTPUT #-DUSE_GPU #-DCPU_DEBUG -DOUTPUT 
-#LDFLAGS += -std=c++14 -march=native -fopenmp -O3
+CC = g++
+CXXFLAGS += -std=c++14 -march=native -fopt-info-vec -fopenmp -O3 -DUSE_GPU -DOUTPUT #-DCPU_DEBUG -DOUTPUT 
+LDFLAGS += -std=c++14 -march=native -fopenmp -O3
 
-CC = icpc
-CXXFLAGS += -std=c++14 -xCORE-AVX2 -qopt-report=5 -qopenmp -O3 -DOUTPUT
-LDFLAGS += -std=c++14 -xCORE-AVX2 -qopenmp -O3
+#CC = icpc
+#CXXFLAGS += -std=c++14 -xHost -qopt-report=5 -qopenmp -O3 -DOUTPUT
+#LDFLAGS += -std=c++14 -xHost -qopenmp -O3
 
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 -I/home/beiwang/clustering/cub-1.8.0 -gencode=arch=compute_60,code=\"sm_60,compute_60\" --ptxas-options=-v -DUSE_TEXTURE #-DGPU_DEBUG

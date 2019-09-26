@@ -120,74 +120,10 @@ static void setStripIndexGPU(int nStrips, int *seedStripNCMask_d, int *prefixSee
 }
 
 __global__
-static void findLeftRightBoundaryGPU(int nSeedStripsNC, int nStrips, float* clusterNoiseSquared_d, int *clusterLastIndexLeft_d, int *clusterLastIndexRight_d, int *seedStripsNCIndex_d, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d)
+static void findLeftRightBoundaryGPU(int nSeedStripsNC, int nStrips, int *clusterLastIndexLeft_d, int *clusterLastIndexRight_d, int *seedStripsNCIndex_d, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, bool *trueCluster_d)
 {
    const uint8_t MaxSequentialHoles = 0;
    const float  ChannelThreshold = 2.0;
-   const int tid = threadIdx.x;
-   const int bid = blockIdx.x;
-   const int nthreads = blockDim.x;
-
-   int index, testIndexLeft, testIndexRight, indexLeft, indexRight, rangeLeft, rangeRight;
-   uint8_t testADC;
-   float noise_i, testNoise;
-
-   int i = nthreads * bid + tid;
-
-   if (i<nSeedStripsNC) {
-
-     clusterNoiseSquared_d[i] = 0.0;
-     index=seedStripsNCIndex_d[i];
-     indexLeft = index;
-     indexRight = index;
-     noise_i = NOISE(index);
-     //noise_i = noise_d[index];
-     clusterNoiseSquared_d[i] += noise_i*noise_i;
-
-     // find left boundary
-     testIndexLeft=index-1;
-     rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
-     //rangeLeft = stripId_d[indexLeft]-stripId_d[testIndexLeft]-1;
-     while(testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
-       //testNoise = NOISE(testIndexLeft);
-       //testADC = static_cast<uint8_t>(ADC(testIndexLeft));
-       testNoise = noise_d[testIndexLeft];
-       testADC = static_cast<uint8_t>(adc_d[testIndexLeft]);
-       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	 --indexLeft;
-	 clusterNoiseSquared_d[i] += testNoise*testNoise;
-       }
-       --testIndexLeft;
-       rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
-       //rangeLeft = stripId_d[indexLeft]-stripId_d[testIndexLeft]-1;
-     }
-
-     // find right boundary
-     testIndexRight=index+1;
-     rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
-     //rangeRight = stripId_d[testIndexRight]-stripId_d[indexRight]-1;
-     while(testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
-       //testNoise = NOISE(testIndexRight);
-       //testADC = static_cast<uint8_t>(ADC(testIndexRight));
-       testNoise = noise_d[testIndexRight];
-       testADC = static_cast<uint8_t>(adc_d[testIndexRight]);
-       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	 ++indexRight;
-	 clusterNoiseSquared_d[i] += testNoise*testNoise;
-       }
-       ++testIndexRight;
-       rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
-       //rangeRight= stripId_d[testIndexRight]-stripId_d[indexRight]-1;
-     }
-
-     clusterLastIndexLeft_d[i] = indexLeft;
-     clusterLastIndexRight_d[i] = indexRight;
-   }
-}
-
-__global__
-static void checkClusterConditionGPU(int nSeedStripsNC, float* clusterNoiseSquared_d, int *clusterLastIndexLeft_d, int *clusterLastIndexRight_d, uint16_t *adc_d, float * gain_d, bool *trueCluster_d, uint8_t *clusterADCs_d)
-{
    const float minGoodCharge = 1620.0;
    const float ClusterThresholdSquared = 25.0;
 
@@ -195,60 +131,119 @@ static void checkClusterConditionGPU(int nSeedStripsNC, float* clusterNoiseSquar
    const int bid = blockIdx.x;
    const int nthreads = blockDim.x;
 
-   int i = nthreads * bid + tid;
-
-   int left, right, size, j;
-   int adcsum = 0, charge;
+   int index, testIndexLeft, testIndexRight, indexLeft, indexRight, rangeLeft, rangeRight;
+   uint8_t testADC;
+   float noise_i, testNoise, noiseSquared_i, adcSum_i;
    bool noiseSquaredPass, chargePerCMPass;
-   uint8_t adc_j;
-   float gain_j;
+   int i = nthreads * bid + tid;
 
    if (i<nSeedStripsNC) {
 
-    trueCluster_d[i] = false;
-    left=clusterLastIndexLeft_d[i];
-    right=clusterLastIndexRight_d[i];
-    size=right-left+1;
-    for (j=0; j<size; j++) {
-      adcsum += (int)ADC(left+j);
-    }
-    noiseSquaredPass = clusterNoiseSquared_d[i]*ClusterThresholdSquared <= ((float)(adcsum)*float(adcsum));
-    chargePerCMPass = (float)(adcsum)/0.047f > minGoodCharge;
-    if (noiseSquaredPass&&chargePerCMPass) {
-      for (j=0; j<size; j++){
-        adc_j = ADC(left+j);
-        gain_j = GAIN(left+j);
-        charge = int( float(adc_j)/gain_j + 0.5f );
-        if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
-        clusterADCs_d[j*nSeedStripsNC+i] = adc_j;
-      }
-      trueCluster_d[i] = true;
-    }
-  }
+     index=seedStripsNCIndex_d[i];
+     indexLeft = index;
+     indexRight = index;
+     noise_i = NOISE(index);
+     noiseSquared_i = noise_i*noise_i;
+     adcSum_i = static_cast<float>(ADC(index));
+
+     // find left boundary
+     testIndexLeft=index-1;
+     rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
+
+     while(testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
+       testNoise = NOISE(testIndexLeft);
+       testADC = static_cast<uint8_t>(ADC(testIndexLeft));
+
+       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	 --indexLeft;
+	 noiseSquared_i += testNoise*testNoise;
+	 adcSum_i += static_cast<float>(testADC);
+       }
+       --testIndexLeft;
+       rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
+     }
+
+     // find right boundary
+     testIndexRight=index+1;
+     rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
+
+     while(testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
+       testNoise = NOISE(testIndexRight);
+       testADC = static_cast<uint8_t>(ADC(testIndexRight));
+       if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	 ++indexRight;
+	 noiseSquared_i += testNoise*testNoise;
+	 adcSum_i += static_cast<float>(testADC);
+       }
+       ++testIndexRight;
+       rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
+     }
+
+     noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;
+     chargePerCMPass = adcSum_i/0.047f > minGoodCharge;
+
+     trueCluster_d[i] = noiseSquaredPass&chargePerCMPass;
+     clusterLastIndexLeft_d[i] = indexLeft;
+     clusterLastIndexRight_d[i] = indexRight;
+   }
+}
+
+__global__
+static void checkClusterConditionGPU(int nSeedStripsNC, int *clusterLastIndexLeft_d, int *clusterLastIndexRight_d, uint16_t *adc_d, float * gain_d, bool *trueCluster_d, uint8_t *clusterADCs_d)
+{
+   const int tid = threadIdx.x;
+   const int bid = blockIdx.x;
+   const int nthreads = blockDim.x;
+
+   int i = nthreads * bid + tid;
+
+   int left, right, size, j;
+   int charge;
+   uint16_t adc_j;
+   float gain_j;
+
+   if (i<nSeedStripsNC) {
+     if (trueCluster_d[i]) {
+       left=clusterLastIndexLeft_d[i];
+       right=clusterLastIndexRight_d[i];
+       size=right-left+1;
+
+       for (j=0; j<size; j++){
+	 adc_j = ADC(left+j);
+	 gain_j = GAIN(left+j);
+	 charge = static_cast<int>( static_cast<float>(adc_j)/gain_j + 0.5f );
+	 if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
+	 clusterADCs_d[j*nSeedStripsNC+i] = adc_j;
+       }
+     }
+   }
 }
 
 extern "C"
-void allocateMemAllStripsGPU(int max_strips, uint16_t **stripId_d_pt, uint16_t **adc_d_pt, float **noise_d_pt, float **gain_d_pt, int **seedStripsNCIndex_d_pt)
+void allocateMemAllStripsGPU(int max_strips, uint16_t **stripId_d_pt, uint16_t **adc_d_pt, float **noise_d_pt, float **gain_d_pt, int **seedStripsNCIndex_d_pt, int **seedStripsMask_d_pt, int **seedStripsNCMask_d_pt, int **prefixSeedStripsNCMask_d_pt)
 {
   cudaMalloc(stripId_d_pt, max_strips*sizeof(uint16_t));
   cudaMalloc(adc_d_pt, max_strips*sizeof(uint16_t));
   cudaMalloc(noise_d_pt, max_strips*sizeof(float));
   cudaMalloc(gain_d_pt, max_strips*sizeof(float));
   cudaMalloc(seedStripsNCIndex_d_pt, max_strips*sizeof(int));
+
+  cudaMalloc(seedStripsMask_d_pt, max_strips*sizeof(int));
+  cudaMalloc(seedStripsNCMask_d_pt, max_strips*sizeof(int));
+  cudaMalloc(prefixSeedStripsNCMask_d_pt, max_strips*sizeof(int));
 }
 
 extern "C"
-void allocateMemNCSeedStripsGPU(int nSeedStripsNC, int **clusterLastIndexLeft_d_pt, int **clusterLastIndexRight_d_pt, float **clusterNoiseSquared_d_pt, uint8_t **clusterADCs_d_pt, bool **trueCluster_d_pt)
+void allocateMemNCSeedStripsGPU(int nSeedStripsNC, int **clusterLastIndexLeft_d_pt, int **clusterLastIndexRight_d_pt, uint8_t **clusterADCs_d_pt, bool **trueCluster_d_pt)
 {
   cudaMalloc(clusterLastIndexLeft_d_pt, 2*nSeedStripsNC*sizeof(int));
   *clusterLastIndexRight_d_pt = *clusterLastIndexLeft_d_pt + nSeedStripsNC;
-  cudaMalloc(clusterNoiseSquared_d_pt, nSeedStripsNC*sizeof(float));
   cudaMalloc(clusterADCs_d_pt, nSeedStripsNC*256*sizeof(uint8_t));
   cudaMalloc(trueCluster_d_pt, nSeedStripsNC*sizeof(bool));
 }
 
 extern "C"
-void freeGPUMem(uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gain_d, int *seedStripNCIndex_d, int *clusterLastIndexLeft_d, float *clusterNoiseSquared_d, uint8_t *clusterADCs_d, bool *trueCluster_d)
+void freeGPUMem(uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gain_d, int *seedStripNCIndex_d, int *seedStripsMask_d, int *seedStripsNCMask_d, int *prefixSeedStripsNCMask_d, int *clusterLastIndexLeft_d, uint8_t *clusterADCs_d, bool *trueCluster_d)
 {
    cudaFree(stripId_d);
    cudaFree(adc_d);
@@ -260,18 +255,20 @@ void freeGPUMem(uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gai
    cudaUnbindTexture(noiseTexRef);
    cudaUnbindTexture(gainTexRef);
 #endif
+   cudaFree(seedStripsMask_d);
+   cudaFree(seedStripsNCMask_d);
+   cudaFree(prefixSeedStripsNCMask_d);
    cudaFree(seedStripNCIndex_d);
    cudaFree(clusterLastIndexLeft_d);
-   cudaFree(clusterNoiseSquared_d);
    cudaFree(clusterADCs_d);
    cudaFree(trueCluster_d);
 }
 
 extern "C"
-void  findClusterGPU(int nSeedStripsNC, int nStrips, float *clusterNoiseSquared_d, int *clusterLastIndexLeft_d,  int *clusterLastIndexRight_d, int *seedStripsNCIndex_d, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gain_d, bool *trueCluster_d, uint8_t *clusterADCs_d, gpu_timing_t *gpu_timing)
+void  findClusterGPU(int nSeedStripsNC, int nStrips, int *clusterLastIndexLeft_d,  int *clusterLastIndexRight_d, int *seedStripsNCIndex_d, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, float *gain_d, bool *trueCluster_d, uint8_t *clusterADCs_d, gpu_timing_t *gpu_timing)
 {
   gpu_timer_start(gpu_timing);
-  int nthreads = 256;
+  int nthreads = 128;
   int nblocks = (nSeedStripsNC+nthreads-1)/nthreads;
 
 #ifdef GPU_DEBUG
@@ -289,28 +286,18 @@ void  findClusterGPU(int nSeedStripsNC, int nStrips, float *clusterNoiseSquared_
     std::cout<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<cpu_adc[i]<<" cpu_noise "<<cpu_noise[i]<<" cpu index "<<cpu_index[i]<<std::endl;
   }
 
-  int *clusterL_d, *clusterR_d;
-  float *clusterNoiseSq_d;
-  bool *trueC_d;
-  uint8_t *cADCs_d;
-  cudaMalloc(&clusterL_d, nSeedStripsNC*sizeof(int));
-  cudaMalloc(&clusterR_d, nSeedStripsNC*sizeof(int));
-  cudaMalloc(&clusterNoiseSq_d, nSeedStripsNC*sizeof(float));
-  cudaMalloc(&trueC_d, nSeedStripsNC*sizeof(bool));
-  cudaMalloc(&cADCs_d, nSeedStripsNC*256*sizeof(uint8_t));
+  free(cpu_index);
+  free(cpu_strip);
+  free(cpu_adc);
+  free(cpu_noise);
 #endif
 
-  findLeftRightBoundaryGPU<<<nblocks, nthreads>>>(nSeedStripsNC, nStrips, clusterNoiseSquared_d, clusterLastIndexLeft_d, clusterLastIndexRight_d, seedStripsNCIndex_d, stripId_d, adc_d, noise_d);
-  //findLeftRightBoundaryGPU<<<nblocks, nthreads>>>(nSeedStripsNC, nStrips, clusterNoiseSq_d, clusterL_d, clusterR_d, seedStripsNCIndex_d, stripId_d, adc_d, noise_d);
+  findLeftRightBoundaryGPU<<<nblocks, nthreads>>>(nSeedStripsNC, nStrips, clusterLastIndexLeft_d, clusterLastIndexRight_d, seedStripsNCIndex_d, stripId_d, adc_d, noise_d, trueCluster_d);
 
   gpu_timing->findBoundaryTime = gpu_timer_measure(gpu_timing);
 
-  //cudaDeviceSynchronize();
+  checkClusterConditionGPU<<<nblocks, nthreads>>>(nSeedStripsNC, clusterLastIndexLeft_d, clusterLastIndexRight_d, adc_d, gain_d, trueCluster_d, clusterADCs_d);
 
-  checkClusterConditionGPU<<<nblocks, nthreads>>>(nSeedStripsNC, clusterNoiseSquared_d, clusterLastIndexLeft_d, clusterLastIndexRight_d, adc_d, gain_d, trueCluster_d, clusterADCs_d);
-  //checkClusterConditionGPU<<<nblocks, nthreads>>>(nSeedStripsNC, clusterNoiseSq_d, clusterL_d, clusterR_d, adc_d, gain_d, trueC_d, cADCs_d);
-
-  //cudaDeviceSynchronize();
   gpu_timing->checkClusterTime = gpu_timer_measure_end(gpu_timing);
 
 #ifdef GPU_DEBUG
@@ -319,17 +306,11 @@ void  findClusterGPU(int nSeedStripsNC, int nStrips, float *clusterNoiseSquared_
   bool *trueCluster = (bool *)malloc(nSeedStripsNC*sizeof(bool));
   uint8_t *ADCs = (uint8_t*)malloc(nSeedStripsNC*256*sizeof(uint8_t));
 
-
-  cudaMemcpy((void *)clusterLastIndexLeft, clusterL_d, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)clusterLastIndexRight, clusterR_d, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)trueCluster, trueC_d, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)ADCs, cADCs_d, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)clusterLastIndexLeft, clusterLastIndexLeft_d, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)clusterLastIndexRight, clusterLastIndexRight_d, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)trueCluster, trueCluster_d, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)ADCs, clusterADCs_d, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
 
-  /*
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
       int left=clusterLastIndexLeft[i];
@@ -342,37 +323,20 @@ void  findClusterGPU(int nSeedStripsNC, int nStrips, float *clusterNoiseSquared_
       std::cout<<std::endl;
     }
   }
-  */
-
-  free(cpu_index);
-  free(cpu_strip);
-  free(cpu_adc);
-  free(cpu_noise);
 
   free(clusterLastIndexLeft);
   free(clusterLastIndexRight);
   free(trueCluster);
   free(ADCs);
-
-  cudaFree(clusterL_d);
-  cudaFree(clusterR_d);
-  cudaFree(clusterNoiseSq_d);
-  cudaFree(trueC_d);
-  cudaFree(cADCs_d);
 #endif
 
 }
 
 extern "C"
-int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, int *seedStripsNCIndex_d, gpu_timing_t *gpu_timing){
+int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, float *noise_d, int *seedStripsNCIndex_d, int *seedStripsMask_d, int *seedStripsNCMask_d, int *prefixSeedStripsNCMask_d, gpu_timing_t *gpu_timing){
   int nSeedStripsNC;
 
   gpu_timer_start(gpu_timing);
-
-  int *seedStripsMask_d, *seedStripsNCMask_d, *prefixSeedStripsNCMask_d;
-  cudaMalloc((void **)&seedStripsMask_d, 3*nStrips*sizeof(int));
-  seedStripsNCMask_d = seedStripsMask_d + nStrips;
-  prefixSeedStripsNCMask_d = seedStripsMask_d + 2*nStrips;
 
   void *d_temp_storage = NULL;
   size_t temp_storage_bytes = 0;
@@ -389,7 +353,6 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
   // mark seed strips
   setSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, noise_d, adc_d, seedStripsMask_d, seedStripsNCMask_d);
   gpu_timing->setSeedStripsTime = gpu_timer_measure(gpu_timing);
-
 
   // mark only non-consecutive seed strips (mask out consecutive seed strips)
   setNCSeedStripsGPU<<<nblocks, nthreads>>>(nStrips, stripId_d, seedStripsMask_d, seedStripsNCMask_d);
@@ -423,8 +386,6 @@ int setSeedStripsNCIndexGPU(int nStrips, uint16_t *stripId_d, uint16_t *adc_d, f
 
   std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<"temp_storage_bytes="<<temp_storage_bytes<<std::endl;
 #endif
-
-  cudaFree(seedStripsMask_d);
 
   gpu_timing->setStripIndexTime = gpu_timer_measure_end(gpu_timing);
 
