@@ -57,7 +57,7 @@ int main()
   nSeedStripsNC = setSeedStripsNCIndexGPU(nStrips, sst_data_d, pt_sst_data_d, calib_data_d, pt_calib_data_d, gpu_timing);
   std::cout<<"GPU nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #else
-  nSeedStripsNC = setSeedStripsNCIndex(nStrips, pt_sst_data, pt_calib_data, cpu_timing);
+  nSeedStripsNC = setSeedStripsNCIndex(nStrips, sst_data, calib_data, cpu_timing);
   std::cout<<"CPU nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #endif
   double t1 = omp_get_wtime();
@@ -71,7 +71,7 @@ int main()
 #ifdef USE_GPU
   findClusterGPU(nSeedStripsNC, nStrips, sst_data_d, pt_sst_data_d, calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing);
 #else
-  findCluster(nSeedStripsNC, nStrips, pt_sst_data, pt_calib_data, pt_clust_data, cpu_timing);
+  findCluster(nSeedStripsNC, nStrips, sst_data, calib_data, clust_data, cpu_timing);
 #endif
   double t3 = omp_get_wtime();
 
