@@ -13,73 +13,65 @@ int main()
 {
   int max_strips = 600000;
   int nStrips, nSeedStripsNC;
-  detId_t *detId;
 
-  uint16_t *stripId, *adc;
-  float *noise, *gain;
-  bool *bad;
-  int *seedStripsNCIndex, *seedStripsMask, *seedStripsNCMask, *prefixSeedStripsNCMask;
-
-  int *clusterLastIndexLeft, *clusterLastIndexRight;
-  uint8_t *clusterADCs;
-  bool *trueCluster;
+  sst_data_t * sst_data = (sst_data_t *)malloc(sizeof(sst_data_t));
+  calib_data_t *calib_data = (calib_data_t *)malloc(sizeof(calib_data_t));
+  clust_data_t *clust_data = (clust_data_t *)malloc(sizeof(clust_data_t));
   cpu_timing_t *cpu_timing = (cpu_timing_t *)malloc(sizeof(cpu_timing_t));
 
-  allocateMemAllStrips(max_strips, &detId, &stripId, &adc, &noise, &gain, &bad, &seedStripsNCIndex, &seedStripsMask, &seedStripsNCMask, &prefixSeedStripsNCMask);
-
-#ifdef USE_GPU
-  uint16_t *stripId_d, *adc_d;
-  float *noise_d, *gain_d;
-  int *seedStripsNCIndex_d, *seedStripsMask_d, *seedStripsNCMask_d, *prefixSeedStripsNCMask_d;
-
-  int *clusterLastIndexLeft_d, *clusterLastIndexRight_d;
-  uint8_t *clusterADCs_d;
-  bool *trueCluster_d;
-  gpu_timing_t *gpu_timing = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
-
-  allocateMemAllStripsGPU(max_strips, &stripId_d, &adc_d, &noise_d, &gain_d, &seedStripsNCIndex_d, &seedStripsMask_d, &seedStripsNCMask_d, &prefixSeedStripsNCMask_d);
-#endif
+  allocateSSTData(max_strips, sst_data);
+  allocateCalibData(max_strips, calib_data);
 
   // read in the data
   std::ifstream digidata_in("digidata.bin", std::ofstream::in | std::ios::binary);
   int i=0;
-  while (digidata_in.read((char*)&detId[i], sizeof(detId_t)).gcount() == sizeof(detId_t)) {
-    digidata_in.read((char*)&stripId[i], sizeof(uint16_t));
-    digidata_in.read((char*)&adc[i], sizeof(uint16_t));
-    digidata_in.read((char*)&noise[i], sizeof(float));
-    digidata_in.read((char*)&gain[i], sizeof(float));
-    digidata_in.read((char*)&bad[i], sizeof(bool));
-    if (bad[i])
-      std::cout<<"index "<<i<<" detid "<<detId[i]<<" stripId "<<stripId[i]<<
-	" adc "<<adc[i]<<" noise "<<noise[i]<<" gain "<<gain[i]<<" bad "<<bad[i]<<std::endl;
+  while (digidata_in.read((char*)&(sst_data->detId[i]), sizeof(detId_t)).gcount() == sizeof(detId_t)) {
+    digidata_in.read((char*)&(sst_data->stripId[i]), sizeof(uint16_t));
+    digidata_in.read((char*)&(sst_data->adc[i]), sizeof(uint16_t));
+    digidata_in.read((char*)&(calib_data->noise[i]), sizeof(float));
+    digidata_in.read((char*)&(calib_data->gain[i]), sizeof(float));
+    digidata_in.read((char*)&(calib_data->bad[i]), sizeof(bool));
+    if (calib_data->bad[i])
+      std::cout<<"index "<<i<<" detid "<<sst_data->detId[i]<<" stripId "<<sst_data->stripId[i]<<
+	" adc "<<sst_data->adc[i]<<" noise "<<calib_data->noise[i]<<" gain "<<calib_data->gain[i]<<" bad "<<calib_data->bad[i]<<std::endl;
     i++;
   }
   nStrips=i;
 
 #ifdef USE_GPU
-  cpyCPUToGPU(nStrips, stripId_d, stripId, adc_d, adc, noise_d, noise, gain_d, gain, gpu_timing);
+  sst_data_t *sst_data_d, *pt_sst_data_d;
+  calib_data_t *calib_data_d, *pt_calib_data_d;
+  clust_data_t *clust_data_d, *pt_clust_data_d;
+  sst_data_d = (sst_data_t *)malloc(sizeof(sst_data_t));
+  calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
+  clust_data_d = (clust_data_t *)malloc(sizeof(clust_data_t));
+  gpu_timing_t *gpu_timing = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
+
+  allocateSSTDataGPU(nStrips, sst_data_d, &pt_sst_data_d);
+  allocateCalibDataGPU(nStrips, calib_data_d, &pt_calib_data_d);
+  cpyCPUToGPU(nStrips, sst_data, sst_data_d, calib_data, calib_data_d, gpu_timing);
 #endif
 
   double t0 = omp_get_wtime();
 #ifdef USE_GPU
-  nSeedStripsNC = setSeedStripsNCIndexGPU(nStrips, stripId_d, adc_d, noise_d, seedStripsNCIndex_d, seedStripsMask_d, seedStripsNCMask_d, prefixSeedStripsNCMask_d, gpu_timing);
+  nSeedStripsNC = setSeedStripsNCIndexGPU(nStrips, sst_data_d, pt_sst_data_d, calib_data_d, pt_calib_data_d, gpu_timing);
   std::cout<<"GPU nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #else
-  nSeedStripsNC = setSeedStripsNCIndex(nStrips, stripId, adc, noise, seedStripsNCIndex, seedStripsMask, seedStripsNCMask, prefixSeedStripsNCMask, cpu_timing);
+  nSeedStripsNC = setSeedStripsNCIndex(nStrips, pt_sst_data, pt_calib_data, cpu_timing);
   std::cout<<"CPU nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #endif
   double t1 = omp_get_wtime();
 
 #ifdef USE_GPU
-  allocateMemNCSeedStripsGPU(nSeedStripsNC, &clusterLastIndexLeft_d, &clusterLastIndexRight_d, &clusterADCs_d, &trueCluster_d);
+  allocateClustDataGPU(nSeedStripsNC, clust_data_d, &pt_clust_data_d);
 #endif
-  allocateMemNCSeedStrips(nSeedStripsNC, &clusterLastIndexLeft, &clusterLastIndexRight, &clusterADCs, &trueCluster);
+  allocateClustData(nSeedStripsNC, clust_data);
 
   double t2 = omp_get_wtime();
 #ifdef USE_GPU
-  findClusterGPU(nSeedStripsNC, nStrips, clusterLastIndexLeft_d, clusterLastIndexRight_d, seedStripsNCIndex_d, stripId_d, adc_d, noise_d, gain_d, trueCluster_d, clusterADCs_d, gpu_timing);
+  findClusterGPU(nSeedStripsNC, nStrips, sst_data_d, pt_sst_data_d, calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing);
 #else
-  findCluster(nSeedStripsNC, nStrips, clusterLastIndexLeft, clusterLastIndexRight, seedStripsNCIndex, stripId, adc, noise, gain, trueCluster, clusterADCs, cpu_timing);
+  findCluster(nSeedStripsNC, nStrips, pt_sst_data, pt_calib_data, pt_clust_data, cpu_timing);
 #endif
   double t3 = omp_get_wtime();
 
@@ -106,18 +98,17 @@ int main()
 
 #ifdef OUTPUT
 #ifdef USE_GPU
-  cpyGPUToCPU(nSeedStripsNC, clusterLastIndexLeft_d, clusterLastIndexLeft, clusterLastIndexRight_d, clusterLastIndexRight, clusterADCs_d, clusterADCs, trueCluster_d, trueCluster);
+  cpyGPUToCPU(nSeedStripsNC, clust_data, clust_data_d);
 #endif
   // print out the result
   for (int i=0; i<nSeedStripsNC; i++) {
-    if (trueCluster[i]){
-      int index = clusterLastIndexLeft[i];
-      std::cout<<" det id "<<detId[index]<<" strip "<<stripId[clusterLastIndexLeft[i]]<< ": ";
-      int left=clusterLastIndexLeft[i];
-      int right=clusterLastIndexRight[i];
-      int size=right-left+1;
+    if (clust_data->trueCluster[i]){
+      int index = clust_data->clusterLastIndexLeft[i];
+      std::cout<<" det id "<<sst_data->detId[index]<<" strip "<<sst_data->stripId[index]<< ": ";
+      int right=clust_data->clusterLastIndexRight[i];
+      int size=right-index+1;
       for (int j=0; j<size; j++){
-	std::cout<<(int)clusterADCs[j*nSeedStripsNC+i]<<" ";
+	std::cout<<(int)clust_data->clusterADCs[j*nSeedStripsNC+i]<<" ";
       }
       std::cout<<std::endl;
     }
@@ -125,12 +116,18 @@ int main()
 #endif
 
 #ifdef USE_GPU
-  free(gpu_timing);
-  freeGPUMem(stripId_d, adc_d, noise_d, gain_d, seedStripsNCIndex_d, seedStripsMask_d, seedStripsNCMask_d, prefixSeedStripsNCMask_d, clusterLastIndexLeft_d, clusterADCs_d, trueCluster_d);
+  free(sst_data_d);
+  free(calib_data_d);
+  free(clust_data_d);
+  cudaFree(gpu_timing);
+  freeGPUMem(sst_data_d, pt_sst_data_d, calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d);
 #endif
 
+  free(sst_data);
+  free(calib_data);
+  free(clust_data);
   free(cpu_timing);
-  freeMem(detId, stripId, adc, noise, gain, bad, seedStripsNCIndex, seedStripsMask, seedStripsNCMask, prefixSeedStripsNCMask, clusterLastIndexLeft, clusterLastIndexRight, clusterADCs, trueCluster);
+  freeMem(sst_data, calib_data, clust_data);
 
   return 0;
 

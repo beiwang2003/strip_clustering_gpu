@@ -12,6 +12,23 @@
 using detId_t = uint32_t;
 
 typedef struct {
+  detId_t *detId;
+  uint16_t *stripId, *adc;
+  int *seedStripsNCIndex, *seedStripsMask, *seedStripsNCMask, *prefixSeedStripsNCMask;
+} sst_data_t;
+
+typedef struct {
+  float *noise, *gain;
+  bool *bad;
+} calib_data_t;
+
+typedef struct {
+  int *clusterLastIndexLeft, *clusterLastIndexRight;
+  uint8_t *clusterADCs;
+  bool *trueCluster;
+} clust_data_t;
+
+typedef struct {
   float setSeedStripsTime;
   float setNCSeedStripsTime;
   float setStripIndexTime;
@@ -19,14 +36,14 @@ typedef struct {
   float checkClusterTime;
 } cpu_timing_t;
 
-void allocateMemAllStrips(int max_strips, detId_t **detId_pt, uint16_t **stripId_pt, uint16_t **adc_pt, float **noise_pt, float **gain_pt, bool **bad_pt, int **seedStripsNCIndex_pt, int **seedStripsMask_pt, int **seedStripsNCMask_pt, int **prefixSeedStripsNCMask_pt);
+void allocateSSTData(int max_strips, sst_data_t *sst_data);
+void allocateCalibData(int max_strips, calib_data_t *calib_data);
+void allocateClustData(int nSeedStripsNC, clust_data_t *clust_data);
 
-void allocateMemNCSeedStrips(int nSeedStripsNC, int **clusterLastIndexLeft_pt, int **clusterLastIndexRight_pt, uint8_t **clusterADCs_pt, bool **trueCluster_pt);
+void freeMem(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data);
 
-void freeMem(detId_t *detId, uint16_t *stripId, uint16_t *adc, float* noise, float *gain, bool *bad, int *seedStripsNCIndex, int *seedStripsMask, int *seedStripsNCMask, int *prefixSeedStripsNCMask, int *clusterLastIndexLeft, int *clusterLastIndexRight, uint8_t *clusterADCs, bool*trueCluster);
+int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing);
 
-int setSeedStripsNCIndex(int nStrips, uint16_t *stripId, uint16_t *adc, float *noise, int *seedStripsNCIndex, int *seedStripsMask, int *seedStripsNCMask, int *prefixSeedStripsNCMask, cpu_timing_t *cpu_timing);
-
-void findCluster(int nSeedStripsNC, int nStrips, int *clusterLastIndexLeft, int *clusterLastIndexRight, int *seedStripsNCIndex, uint16_t *stripId, uint16_t *adc, float *noise, float *gain, bool *trueCluster, uint8_t *clusterADCs, cpu_timing_t *cpu_timing);
+void findCluster(int nSeedStripsNC, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
 
 #endif
