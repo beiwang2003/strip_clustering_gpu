@@ -15,6 +15,9 @@ typedef struct {
   detId_t *detId;
   uint16_t *stripId, *adc;
   int *seedStripsNCIndex, *seedStripsMask, *seedStripsNCMask, *prefixSeedStripsNCMask;
+  size_t temp_storage_bytes = 0;
+  void *d_temp_storage = NULL;
+  int nSeedStripsNC;
 } sst_data_t;
 
 typedef struct {
@@ -40,10 +43,12 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data);
 void allocateCalibData(int max_strips, calib_data_t *calib_data);
 void allocateClustData(int nSeedStripsNC, clust_data_t *clust_data);
 
-void freeMem(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data);
+void freeSSTData(sst_data_t *sst_data);
+void freeCalibData(calib_data_t *calib_data_t);
+void freeClustData(clust_data_t *clust_data_t);
 
-int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing);
+void setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing);
 
-void findCluster(int nSeedStripsNC, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
+void findCluster(int event, int nStreams, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
 
 #endif

@@ -1,5 +1,5 @@
 CC = g++
-CXXFLAGS += -std=c++14 -march=native -fopt-info-vec -fopenmp -O3 -DUSE_GPU -DOUTPUT #-DCPU_DEBUG -DOUTPUT 
+CXXFLAGS += -std=c++14 -march=native -fopt-info-vec -fopenmp -O3 -DUSE_GPU #-DOUTPUT #-DCPU_DEBUG -DOUTPUT 
 LDFLAGS += -std=c++14 -march=native -fopenmp -O3
 
 #CC = icpc
@@ -7,9 +7,8 @@ LDFLAGS += -std=c++14 -march=native -fopenmp -O3
 #LDFLAGS += -std=c++14 -xHost -qopenmp -O3
 
 NVCC = nvcc
-CUDAFLAGS += -std=c++14 -O3 -I/home/beiwang/clustering/cub-1.8.0 -gencode=arch=compute_60,code=\"sm_60,compute_60\" --ptxas-options=-v -DUSE_TEXTURE #-DGPU_DEBUG
+CUDAFLAGS += -std=c++14 -O3 -I/home/beiwang/clustering/cub-1.8.0 -gencode=arch=compute_60,code=\"sm_60,compute_60\" --ptxas-options=-v #-DGPU_TIMER -DGPU_DEBUG #-DUSE_TEXTURE #-DGPU_DEBUG
 # -arch=sm_60 is equavalent to -gencode=arch=compute_60,code=\"sm_60,compute_60\"
-
 CUDALDFLAGS += -lcudart 
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o

@@ -26,15 +26,17 @@ void allocateSSTDataGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t **pt_sst
 void allocateCalibDataGPU(int nStrips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_t);
 void allocateClustDataGPU(int nSeedStripsNC, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_t);
 
-void freeGPUMem(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_t, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d);
+void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d);
+void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_t);
+void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d);
 
-void cpyCPUToGPU(int nStrips, sst_data_t *sst_data, sst_data_t *sst_data_d, calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing);
+void cpyGPUToCPU(int event, int nStreams, int nStrips, sst_data_t *sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d);
+void cpySSTDataToGPU(int nStrips, sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
+void cpyCalibDataToGPU(int nStrips,  calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing);
 
-void cpyGPUToCPU(int nSeedStripsNC, clust_data_t *clust_data, clust_data_t *clust_data_d);
+void findClusterGPU(int event, int nStreams, int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
-void findClusterGPU(int SeedStripsNC, int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing);
-
-int setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing);
+void setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
 #ifdef __cplusplus
    }

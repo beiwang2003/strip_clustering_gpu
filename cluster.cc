@@ -2,8 +2,18 @@
 #include <mm_malloc.h>
 #include <iostream>
 #include <cmath>
+#include <cuda_runtime_api.h>
 
 void allocateSSTData(int max_strips, sst_data_t *sst_data){
+#ifdef USE_GPU
+  cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->stripId), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->adc), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->seedStripsNCIndex), max_strips*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->seedStripsMask), max_strips*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->seedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
+#else
   sst_data->detId = (detId_t *)_mm_malloc(max_strips*sizeof(detId_t), IDEAL_ALIGNMENT);
   sst_data->stripId = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
   sst_data->adc = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
@@ -12,6 +22,7 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data){
   sst_data->seedStripsMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
   sst_data->seedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
   sst_data->prefixSeedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+#endif
 }
 
 void allocateCalibData(int max_strips, calib_data_t *calib_data){
@@ -21,14 +32,29 @@ void allocateCalibData(int max_strips, calib_data_t *calib_data){
 }
 
 void allocateClustData(int nSeedStripsNC, clust_data_t *clust_data){
+#ifdef USE_GPU
+  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), nSeedStripsNC*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->clusterLastIndexRight), nSeedStripsNC*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->clusterADCs), nSeedStripsNC*256*sizeof(uint8_t), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->trueCluster), nSeedStripsNC*sizeof(bool), cudaHostAllocDefault);
+#else
   clust_data->clusterLastIndexLeft = (int *)_mm_malloc(nSeedStripsNC*sizeof(int), IDEAL_ALIGNMENT);
   clust_data->clusterLastIndexRight = (int *)_mm_malloc(nSeedStripsNC*sizeof(int), IDEAL_ALIGNMENT);
   clust_data->clusterADCs = (uint8_t *)_mm_malloc(nSeedStripsNC*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
   clust_data->trueCluster = (bool *)_mm_malloc(nSeedStripsNC*sizeof(bool), IDEAL_ALIGNMENT);
+#endif
 }
 
-void freeMem(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data)
-{
+void freeSSTData(sst_data_t *sst_data) {
+#ifdef USE_GPU
+  cudaFreeHost(sst_data->detId);
+  cudaFreeHost(sst_data->stripId);
+  cudaFreeHost(sst_data->adc);
+  cudaFreeHost(sst_data->seedStripsNCIndex);
+  cudaFreeHost(sst_data->seedStripsMask);
+  cudaFreeHost(sst_data->seedStripsNCMask);
+  cudaFreeHost(sst_data->prefixSeedStripsNCMask);
+#else
   free(sst_data->detId);
   free(sst_data->stripId);
   free(sst_data->adc);
@@ -36,19 +62,30 @@ void freeMem(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust
   free(sst_data->seedStripsMask);
   free(sst_data->seedStripsNCMask);
   free(sst_data->prefixSeedStripsNCMask);
+#endif
+}
 
+void freeCalibData(calib_data_t *calib_data) {
   free(calib_data->noise);
   free(calib_data->gain);
   free(calib_data->bad);
+}
 
+void freeClustData(clust_data_t *clust_data) {
+#ifdef USE_GPU
+  cudaFreeHost(clust_data->clusterLastIndexLeft);
+  cudaFreeHost(clust_data->clusterLastIndexRight);
+  cudaFreeHost(clust_data->clusterADCs);
+  cudaFreeHost(clust_data->trueCluster);
+#else
   free(clust_data->clusterLastIndexLeft);
   free(clust_data->clusterLastIndexRight);
   free(clust_data->clusterADCs);
   free(clust_data->trueCluster);
-
+#endif
 }
 
-int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing) {
+void setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing) {
   const uint16_t *__restrict__ stripId = sst_data->stripId;
   const uint16_t *__restrict__ adc = sst_data->adc;
   const float *__restrict__ noise = calib_data->noise;
@@ -57,7 +94,7 @@ int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_
   int *__restrict__ seedStripsNCMask = sst_data->seedStripsNCMask;
   int *__restrict__ prefixSeedStripsNCMask = sst_data->prefixSeedStripsNCMask;
 
-  int nSeedStripsNC, j;
+  int j;
   int nStripsP2 = std::pow(2, std::floor(std::log2(nStrips))+1);  int depth = std::log2(nStripsP2);
 
   float SeedThreshold = 3.0;
@@ -118,7 +155,7 @@ int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_
     // The down-sweep phase of a work-efficient sum scan algorithm
 #pragma omp single
     {
-      nSeedStripsNC = prefixSeedStripsNCMask[nStripsP2-1];
+      sst_data->nSeedStripsNC = prefixSeedStripsNCMask[nStripsP2-1];
       prefixSeedStripsNCMask[nStripsP2-1] = 0;
     }
     for (int d=depth-1; d>=0; d--) {
@@ -149,21 +186,20 @@ int setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_
     if (seedStripNCMask[i])
       std::cout<<" i "<<i<<" mask "<<seedStripsNCMask[i]<<" prefix "<<prefixSeedStripsNCMask[i]<<" index "<<seedStripsNCIndex[i]<<std::endl;
   }
-  std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+  std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data->nSeedStripsNC<<std::endl;
 #endif
-
-  return nSeedStripsNC;
 
 }
 
-static void findLeftRightBoundary(int nSeedStripsNC, int nStrips,  sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
+static void findLeftRightBoundary(int offset, int nStrips,  sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
   const int *__restrict__ seedStripsNCIndex = sst_data->seedStripsNCIndex;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
   const uint16_t *__restrict__ adc = sst_data->adc;
+  const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ noise = calib_data->noise;
-  int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft;
-  int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight;
-  bool *__restrict__ trueCluster = clust_data->trueCluster;
+  int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft+offset;
+  int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight+offset;
+  bool *__restrict__ trueCluster = clust_data->trueCluster+offset;
 
   uint8_t MaxSequentialHoles = 0;
   float  ChannelThreshold = 2.0;
@@ -220,13 +256,14 @@ static void findLeftRightBoundary(int nSeedStripsNC, int nStrips,  sst_data_t *s
   }
 }
 
-static void checkClusterCondition(int nSeedStripsNC, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
-  const int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft;
-  const int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight;
+static void checkClusterCondition(int offset, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
+  const int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft+offset;
+  const int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight+offset;
   const uint16_t *__restrict__ adc = sst_data->adc;
+  const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ gain = calib_data->gain;
-  const bool *__restrict__ trueCluster = clust_data->trueCluster;
-  uint8_t *__restrict__ clusterADCs = clust_data->clusterADCs;
+  const bool *__restrict__ trueCluster = clust_data->trueCluster+offset;
+  uint8_t *__restrict__ clusterADCs = clust_data->clusterADCs+offset*256;
 
 #pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++){
@@ -247,12 +284,12 @@ static void checkClusterCondition(int nSeedStripsNC, sst_data_t *sst_data, calib
 
 }
 
-void findCluster(int nSeedStripsNC, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing){
+void findCluster(int event, int nStreams, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing){
   double t0 = omp_get_wtime();
-  findLeftRightBoundary(nSeedStripsNC, nStrips, sst_data, calib_data, clust_data);
+  findLeftRightBoundary(event*(nStrips/nStreams), nStrips, sst_data, calib_data, clust_data);
   double t1 = omp_get_wtime();
   cpu_timing->findBoundaryTime = t1 - t0;
 
-  checkClusterCondition(nSeedStripsNC, sst_data, calib_data, clust_data);
+  checkClusterCondition(event*(nStrips/nStreams), sst_data, calib_data, clust_data);
   cpu_timing->checkClusterTime = omp_get_wtime() - t1;
 }
