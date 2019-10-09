@@ -193,6 +193,7 @@ void setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib
 
 static void findLeftRightBoundary(int offset, int nStrips,  sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
   const int *__restrict__ seedStripsNCIndex = sst_data->seedStripsNCIndex;
+  const detId_t *__restrict__ detId = sst_data->detId;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
   const uint16_t *__restrict__ adc = sst_data->adc;
   const int nSeedStripsNC = sst_data->nSeedStripsNC;
@@ -203,7 +204,6 @@ static void findLeftRightBoundary(int offset, int nStrips,  sst_data_t *sst_data
 
   uint8_t MaxSequentialHoles = 0;
   float  ChannelThreshold = 2.0;
-  const float minGoodCharge = 1620.0;
   const float ClusterThresholdSquared = 25.0;
 
   // (currently, we assume no bad strip. fix later)
@@ -219,38 +219,40 @@ static void findLeftRightBoundary(int offset, int nStrips,  sst_data_t *sst_data
     // find left boundary
     int testIndexLeft=index-1;
     int rangeLeft = stripId[indexLeft]-stripId[testIndexLeft]-1;
-    while(testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
+    bool sameDetLeft = detId[index] == detId[testIndexLeft];
+    while(sameDetLeft&&testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
       float testNoise = noise[testIndexLeft];
       uint8_t testADC = static_cast<uint8_t>(adc[testIndexLeft]);
 
-      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	--indexLeft;
 	noiseSquared_i += testNoise*testNoise;
 	adcSum_i += static_cast<float>(testADC);
       }
       --testIndexLeft;
       rangeLeft =stripId[indexLeft]-stripId[testIndexLeft]-1;
+      sameDetLeft = detId[index] == detId[testIndexLeft];
     }
 
     // find right boundary
     int testIndexRight=index+1;
     int rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
-    while(testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
+    bool sameDetRight = detId[index] == detId[testIndexRight];
+    while(sameDetRight&&testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
       float testNoise = noise[testIndexRight];
       uint8_t testADC = static_cast<uint8_t>(adc[testIndexRight]);
-      if (testADC > static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	++indexRight;
 	noiseSquared_i += testNoise*testNoise;
 	adcSum_i += static_cast<float>(testADC);
       }
       ++testIndexRight;
       rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
+      sameDetRight = detId[index] == detId[testIndexRight];
     }
 
     bool noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;
-    bool chargePerCMPass = adcSum_i/0.047f > minGoodCharge;
-
-    trueCluster[i] = noiseSquaredPass&&chargePerCMPass;
+    trueCluster[i] = noiseSquaredPass;
     clusterLastIndexLeft[i] = indexLeft;
     clusterLastIndexRight[i] = indexRight;
   }
@@ -262,15 +264,18 @@ static void checkClusterCondition(int offset, sst_data_t *sst_data, calib_data_t
   const uint16_t *__restrict__ adc = sst_data->adc;
   const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ gain = calib_data->gain;
-  const bool *__restrict__ trueCluster = clust_data->trueCluster+offset;
+  bool *__restrict__ trueCluster = clust_data->trueCluster+offset;
   uint8_t *__restrict__ clusterADCs = clust_data->clusterADCs+offset*256;
+  const float minGoodCharge = 1620.0;
 
 #pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++){
     if (trueCluster[i]) {
+
       int left=clusterLastIndexLeft[i];
       int right=clusterLastIndexRight[i];
       int size=right-left+1;
+      float adcSum=0.0f;
 
       for (int j=0; j<size; j++){
         uint8_t adc_j = adc[left+j];
@@ -278,18 +283,22 @@ static void checkClusterCondition(int offset, sst_data_t *sst_data, calib_data_t
         auto charge = int( float(adc_j)/gain_j + 0.5f );
         if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
         clusterADCs[j*nSeedStripsNC+i] = adc_j;
+        adcSum += static_cast<float>(adc_j);
       }
+      trueCluster[i] = adcSum/0.047f > minGoodCharge;
     }
   }
 
 }
 
-void findCluster(int event, int nStreams, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing){
+void findCluster(int event, int nStreams, int max_strips, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing){
+
+  int offset = event *(max_strips/nStreams);
   double t0 = omp_get_wtime();
-  findLeftRightBoundary(event*(nStrips/nStreams), nStrips, sst_data, calib_data, clust_data);
+  findLeftRightBoundary(offset, nStrips, sst_data, calib_data, clust_data);
   double t1 = omp_get_wtime();
   cpu_timing->findBoundaryTime = t1 - t0;
 
-  checkClusterCondition(event*(nStrips/nStreams), sst_data, calib_data, clust_data);
+  checkClusterCondition(offset, sst_data, calib_data, clust_data);
   cpu_timing->checkClusterTime = omp_get_wtime() - t1;
 }

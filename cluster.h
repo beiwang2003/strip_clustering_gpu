@@ -49,6 +49,6 @@ void freeClustData(clust_data_t *clust_data_t);
 
 void setSeedStripsNCIndex(int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing);
 
-void findCluster(int event, int nStreams, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
+void findCluster(int event, int nStreams, int max_strips, int nStrips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
 
 #endif

@@ -10,8 +10,6 @@
    extern "C" {
 #endif
 
-#define USE_TEXTURE 1
-
 typedef	struct {
   float memTransferTime;
   float setSeedStripsTime;
@@ -30,11 +28,11 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d);
 void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_t);
 void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d);
 
-void cpyGPUToCPU(int event, int nStreams, int nStrips, sst_data_t *sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d);
+void cpyGPUToCPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t *sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d);
 void cpySSTDataToGPU(int nStrips, sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 void cpyCalibDataToGPU(int nStrips,  calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing);
 
-void findClusterGPU(int event, int nStreams, int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
+void findClusterGPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
 void setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
