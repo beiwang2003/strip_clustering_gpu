@@ -218,37 +218,45 @@ static void findLeftRightBoundary(int offset, int nStrips,  sst_data_t *sst_data
 
     // find left boundary
     int testIndexLeft=index-1;
-    int rangeLeft = stripId[indexLeft]-stripId[testIndexLeft]-1;
-    bool sameDetLeft = detId[index] == detId[testIndexLeft];
-    while(sameDetLeft&&testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
-      float testNoise = noise[testIndexLeft];
-      uint8_t testADC = static_cast<uint8_t>(adc[testIndexLeft]);
+    if (testIndexLeft>=0) {
+      int rangeLeft = stripId[indexLeft]-stripId[testIndexLeft]-1;
+      bool sameDetLeft = detId[index] == detId[testIndexLeft];
+      while(sameDetLeft&&testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
+	float testNoise = noise[testIndexLeft];
+	uint8_t testADC = static_cast<uint8_t>(adc[testIndexLeft]);
 
-      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	--indexLeft;
-	noiseSquared_i += testNoise*testNoise;
-	adcSum_i += static_cast<float>(testADC);
+	if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	  --indexLeft;
+	  noiseSquared_i += testNoise*testNoise;
+	  adcSum_i += static_cast<float>(testADC);
+	}
+	--testIndexLeft;
+	if (testIndexLeft>=0) {
+	  rangeLeft =stripId[indexLeft]-stripId[testIndexLeft]-1;
+	  sameDetLeft = detId[index] == detId[testIndexLeft];
+	}
       }
-      --testIndexLeft;
-      rangeLeft =stripId[indexLeft]-stripId[testIndexLeft]-1;
-      sameDetLeft = detId[index] == detId[testIndexLeft];
     }
 
     // find right boundary
     int testIndexRight=index+1;
-    int rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
-    bool sameDetRight = detId[index] == detId[testIndexRight];
-    while(sameDetRight&&testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
-      float testNoise = noise[testIndexRight];
-      uint8_t testADC = static_cast<uint8_t>(adc[testIndexRight]);
-      if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	++indexRight;
-	noiseSquared_i += testNoise*testNoise;
-	adcSum_i += static_cast<float>(testADC);
+    if (testIndexRight<nStrips) {
+      int rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
+      bool sameDetRight = detId[index] == detId[testIndexRight];
+      while(sameDetRight&&testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
+	float testNoise = noise[testIndexRight];
+	uint8_t testADC = static_cast<uint8_t>(adc[testIndexRight]);
+	if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	  ++indexRight;
+	  noiseSquared_i += testNoise*testNoise;
+	  adcSum_i += static_cast<float>(testADC);
+	}
+	++testIndexRight;
+	if (testIndexRight<nStrips) {
+	  rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
+	  sameDetRight = detId[index] == detId[testIndexRight];
+	}
       }
-      ++testIndexRight;
-      rangeRight = stripId[testIndexRight]-stripId[indexRight]-1;
-      sameDetRight = detId[index] == detId[testIndexRight];
     }
 
     bool noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;

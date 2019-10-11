@@ -157,8 +157,6 @@ static void findLeftRightBoundaryGPU(int offset, int nStrips, sst_data_t *sst_da
    bool noiseSquaredPass, sameDetLeft, sameDetRight;
    int i = nthreads * bid + tid;
 
-   //   if (i==0) printf("findLeftRightBoundary nSeedStripsNC=%d",nSeedStripsNC);
-
    if (i<nSeedStripsNC) {
      index=seedStripsNCIndex[i];
      indexLeft = index;
@@ -169,43 +167,52 @@ static void findLeftRightBoundaryGPU(int offset, int nStrips, sst_data_t *sst_da
 
      // find left boundary
      testIndexLeft=index-1;
-     rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
-     sameDetLeft = detId[index] == detId[testIndexLeft];
-     while(sameDetLeft&&testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
-       testNoise = NOISE(testIndexLeft);
-       testADC = static_cast<uint8_t>(ADC(testIndexLeft));
-
-       if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	 --indexLeft;
-	 noiseSquared_i += testNoise*testNoise;
-	 adcSum_i += static_cast<float>(testADC);
-       }
-       --testIndexLeft;
+     if (testIndexLeft>=0) {
        rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
        sameDetLeft = detId[index] == detId[testIndexLeft];
+       while(sameDetLeft&&testIndexLeft>=0&&rangeLeft>=0&&rangeLeft<=MaxSequentialHoles) {
+
+	 testNoise = NOISE(testIndexLeft);
+	 testADC = static_cast<uint8_t>(ADC(testIndexLeft));
+
+	 if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	   --indexLeft;
+	   noiseSquared_i += testNoise*testNoise;
+	   adcSum_i += static_cast<float>(testADC);
+	 }
+	 --testIndexLeft;
+	 if (testIndexLeft>=0) {
+	   rangeLeft = STRIPID(indexLeft)-STRIPID(testIndexLeft)-1;
+	   sameDetLeft = detId[index] == detId[testIndexLeft];
+	 }
+       }
      }
 
      // find right boundary
      testIndexRight=index+1;
-     rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
-     sameDetRight = detId[index] == detId[testIndexRight];
-     while(sameDetRight&&testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
-       testNoise = NOISE(testIndexRight);
-       testADC = static_cast<uint8_t>(ADC(testIndexRight));
-       if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
-	 ++indexRight;
-	 noiseSquared_i += testNoise*testNoise;
-	 adcSum_i += static_cast<float>(testADC);
-       }
-       ++testIndexRight;
+     if (testIndexRight<nStrips) {
        rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
        sameDetRight = detId[index] == detId[testIndexRight];
+       while(sameDetRight&&testIndexRight<nStrips&&rangeRight>=0&&rangeRight<=MaxSequentialHoles) {
+	 testNoise = NOISE(testIndexRight);
+	 testADC = static_cast<uint8_t>(ADC(testIndexRight));
+	 if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
+	   ++indexRight;
+	   noiseSquared_i += testNoise*testNoise;
+	   adcSum_i += static_cast<float>(testADC);
+	 }
+	 ++testIndexRight;
+	 if (testIndexRight<nStrips) {
+	   rangeRight = STRIPID(testIndexRight)-STRIPID(indexRight)-1;
+	   sameDetRight = detId[index] == detId[testIndexRight];
+	 }
+       }
      }
-
      noiseSquaredPass = noiseSquared_i*ClusterThresholdSquared <= adcSum_i*adcSum_i;
      trueCluster[i] = noiseSquaredPass;
      clusterLastIndexLeft[i] = indexLeft;
      clusterLastIndexRight[i] = indexRight;
+
    }
 }
 
@@ -218,10 +225,10 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
    const float *__restrict__ gain = calib_data_d->gain;
 #endif
    const int nSeedStripsNC = sst_data_d->nSeedStripsNC;
-
+   int offset256 = offset*256;
    const int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft+offset;
    const int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight+offset;
-   uint8_t *__restrict__ clusterADCs = clust_data_d->clusterADCs+offset*256;
+   uint8_t *__restrict__ clusterADCs = clust_data_d->clusterADCs+offset256;
    bool *__restrict__ trueCluster = clust_data_d->trueCluster+offset;
    const float minGoodCharge = 1620.0;
 
@@ -381,18 +388,22 @@ void findClusterGPU(int event, int nStreams, int max_strips, int nStrips, sst_da
   int *clusterLastIndexRight = (int *)malloc(nSeedStripsNC*sizeof(int));
   bool *trueCluster = (bool *)malloc(nSeedStripsNC*sizeof(bool));
   uint8_t *ADCs = (uint8_t*)malloc(nSeedStripsNC*256*sizeof(uint8_t));
-  cudaDeviceSynchronize();
+  //  cudaStreamSynchronize(stream);
+  //nSeedStripsNC=sst_data_d->nSeedStripsNC;
+  std::cout<<"findClusterGPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+  cudaMemcpyAsync((void *)clusterLastIndexLeft, clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)clusterLastIndexRight, clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)trueCluster, clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)ADCs, clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+  cudaStreamSynchronize(stream);
   nSeedStripsNC=sst_data_d->nSeedStripsNC;
-  cudaMemcpy((void *)clusterLastIndexLeft, clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)clusterLastIndexRight, clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)trueCluster, clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)ADCs, clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
 
   for (int i=0; i<nSeedStripsNC; i++) {
     if (trueCluster[i]){
       int left=clusterLastIndexLeft[i];
       int right=clusterLastIndexRight[i];
-      std::cout<<" left "<<left<<" right "<<right<<" : ";
+      std::cout<<"i="<<i<<" left "<<left<<" right "<<right<<" : ";
       int size=right-left+1;
       for (int j=0; j<size; j++){
 	std::cout<<(int)ADCs[j*nSeedStripsNC+i]<<" ";
@@ -482,14 +493,16 @@ void setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt
 
 
 extern "C"
-void cpyGPUToCPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t * sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d) {
+void cpyGPUToCPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t * sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, cudaStream_t stream) {
   int offset = event*(max_strips/nStreams);
-  cudaDeviceSynchronize();
+  //  cudaDeviceSynchronize();
   int nSeedStripsNC = sst_data_d->nSeedStripsNC;
-  cudaMemcpy((void *)(clust_data->clusterLastIndexLeft+offset), clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)(clust_data->clusterLastIndexRight+offset), clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)(clust_data->clusterADCs+offset*256), clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)(clust_data->trueCluster+offset), clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
+  std::cout<<"cpyGPUtoCPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft+offset), clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight+offset), clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->clusterADCs+offset*256), clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->trueCluster+offset), clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream);
+  cudaStreamSynchronize(stream);
 }
 
 extern "C"

@@ -12,7 +12,7 @@
 int main()
 {
   const int max_strips = 600000;
-  const int nStreams = 1;
+  const int nStreams = 4;
   int nStrips;
   sst_data_t *sst_data = (sst_data_t *)malloc(sizeof(sst_data_t));
   calib_data_t *calib_data = (calib_data_t *)malloc(sizeof(calib_data_t));
@@ -83,10 +83,10 @@ int main()
   for (i=0; i<nStreams; i++) {
     //std::cout<<" Event "<<i<<std::endl;
 #ifdef USE_GPU
-    cpyGPUToCPU(i, nStreams, max_strips, nStrips, sst_data_d[i], clust_data, clust_data_d);
+    cpyGPUToCPU(i, nStreams, max_strips, nStrips, sst_data_d[i], clust_data, clust_data_d, stream[i]);
     sst_data->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
 #endif
-    //std::cout<<" Event "<<i<<" nSeedStripsNC "<<sst_data->nSeedStripsNC<<std::endl;
+    std::cout<<" Event "<<i<<" nSeedStripsNC "<<sst_data->nSeedStripsNC<<std::endl;
     int offset=i*(max_strips/nStreams);
     for (int j=0; j<sst_data->nSeedStripsNC; j++) {
       if (clust_data->trueCluster[j+offset]){
