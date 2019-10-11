@@ -63,18 +63,22 @@ int main()
 
   double t0 = omp_get_wtime();
 
-  for (int i=0; i<nStreams; i++) {
-#ifdef USE_GPU
+#if USE_GPU
+  //#pragma omp parallel for num_threads(nStreams)
+  for (int i=0; i<nStreams; i++)
     cpySSTDataToGPU(nStrips, sst_data, sst_data_d[i], gpu_timing, stream[i]);
+  for (int i=0; i<nStreams; i++)
     setSeedStripsNCIndexGPU(nStrips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing, stream[i]);
     //    std::cout<<"Event="<<i<<"GPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data_d[i]->nSeedStripsNC<<std::endl;
+  for (int i=0; i<nStreams; i++)
     findClusterGPU(i, nStreams, max_strips, nStrips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing, stream[i]);
 #else
+  for (int i=0; i<nStreams; i++) {
     setSeedStripsNCIndex(nStrips, sst_data, calib_data, cpu_timing);
     //std::cout<<"Event="<<i<<"CPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data->nSeedStripsNC<<std::endl;
     findCluster(i, nStreams, max_strips, nStrips, sst_data, calib_data, clust_data, cpu_timing);
-#endif
   }
+#endif
 
   double t1 = omp_get_wtime();
 
@@ -83,7 +87,7 @@ int main()
   for (i=0; i<nStreams; i++) {
     //std::cout<<" Event "<<i<<std::endl;
 #ifdef USE_GPU
-    cpyGPUToCPU(i, nStreams, max_strips, nStrips, sst_data_d[i], clust_data, clust_data_d, stream[i]);
+    cpyGPUToCPU(i, nStreams, max_strips, nStrips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
     sst_data->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
 #endif
     std::cout<<" Event "<<i<<" nSeedStripsNC "<<sst_data->nSeedStripsNC<<std::endl;

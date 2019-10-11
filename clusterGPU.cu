@@ -459,11 +459,9 @@ void setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt
   cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, nStrips, stream);
 
   cudaMemcpyAsync((void *)&(pt_sst_data_d->nSeedStripsNC), sst_data_d->prefixSeedStripsNCMask+nStrips-1, sizeof(int), cudaMemcpyDeviceToDevice, stream);
-  cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
+  //  cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
 
   setStripIndexGPU<<<nblocks, nthreads, 0, stream>>>(nStrips, pt_sst_data_d);
-
-  //cudaStreamSyncrhonize(stream);
 
 #ifdef GPU_TIMER
   gpu_timing->setStripIndexTime = gpu_timer_measure_end(gpu_timing, stream);
@@ -493,9 +491,10 @@ void setSeedStripsNCIndexGPU(int nStrips, sst_data_t *sst_data_d, sst_data_t *pt
 
 
 extern "C"
-void cpyGPUToCPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t * sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, cudaStream_t stream) {
+void cpyGPUToCPU(int event, int nStreams, int max_strips, int nStrips, sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, cudaStream_t stream) {
   int offset = event*(max_strips/nStreams);
   //  cudaDeviceSynchronize();
+  cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
   int nSeedStripsNC = sst_data_d->nSeedStripsNC;
   std::cout<<"cpyGPUtoCPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
   cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft+offset), clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
