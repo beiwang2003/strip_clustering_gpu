@@ -39,7 +39,7 @@ void allocateClustData(int max_strips, clust_data_t *clust_data){
   cudaHostAlloc((void **)&(clust_data->trueCluster), max_strips*sizeof(bool), cudaHostAllocDefault);
 #else
   clust_data->clusterLastIndexLeft = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  clust_data->clusterLastIndexRight = (int *)_mm_malloc(max_stripsNC*sizeof(int), IDEAL_ALIGNMENT);
+  clust_data->clusterLastIndexRight = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
   clust_data->clusterADCs = (uint8_t *)_mm_malloc(max_strips*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
   clust_data->trueCluster = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
 #endif
