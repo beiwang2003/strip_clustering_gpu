@@ -13,7 +13,6 @@ int main()
 {
   const int max_strips = 600000;
   const int nStreams = 4;
-  int nStrips;
   sst_data_t *sst_data = (sst_data_t *)malloc(sizeof(sst_data_t));
   calib_data_t *calib_data = (calib_data_t *)malloc(sizeof(calib_data_t));
   clust_data_t *clust_data = (clust_data_t *)malloc(sizeof(clust_data_t));
@@ -37,7 +36,7 @@ int main()
 	" adc "<<sst_data->adc[i]<<" noise "<<calib_data->noise[i]<<" gain "<<calib_data->gain[i]<<" bad "<<calib_data->bad[i]<<std::endl;
     i++;
   }
-  nStrips=i;
+  sst_data->nStrips=i;
 
 #ifdef USE_GPU
   sst_data_t *sst_data_d[nStreams], *pt_sst_data_d[nStreams];
@@ -52,31 +51,33 @@ int main()
   gpu_timing_t *gpu_timing = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
 
   cudaStream_t stream[nStreams];
-  allocateCalibDataGPU(nStrips, calib_data_d, &pt_calib_data_d);
+  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
   allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d);
   for (int i=0; i<nStreams; i++) {
-    allocateSSTDataGPU(nStrips, sst_data_d[i], &pt_sst_data_d[i]);
+    sst_data_d[i]->nStrips = sst_data->nStrips;
+    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
     cudaStreamCreate(&stream[i]);
   }
-  cpyCalibDataToGPU(nStrips, calib_data, calib_data_d, gpu_timing);
 #endif
 
   double t0 = omp_get_wtime();
 
 #if USE_GPU
-  //#pragma omp parallel for num_threads(nStreams)
-  for (int i=0; i<nStreams; i++)
-    cpySSTDataToGPU(nStrips, sst_data, sst_data_d[i], gpu_timing, stream[i]);
-  for (int i=0; i<nStreams; i++)
-    setSeedStripsNCIndexGPU(nStrips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing, stream[i]);
+  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing);
+#pragma omp parallel for num_threads(nStreams)
+  for (int i=0; i<nStreams; i++) {
+    cpySSTDataToGPU(sst_data, sst_data_d[i], gpu_timing, stream[i]);
+
+    setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing, stream[i]);
     //    std::cout<<"Event="<<i<<"GPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data_d[i]->nSeedStripsNC<<std::endl;
-  for (int i=0; i<nStreams; i++)
-    findClusterGPU(i, nStreams, max_strips, nStrips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing, stream[i]);
+
+    findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing, stream[i]);
+  }
 #else
   for (int i=0; i<nStreams; i++) {
-    setSeedStripsNCIndex(nStrips, sst_data, calib_data, cpu_timing);
+    setSeedStripsNCIndex(sst_data, calib_data, cpu_timing);
     //std::cout<<"Event="<<i<<"CPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data->nSeedStripsNC<<std::endl;
-    findCluster(i, nStreams, max_strips, nStrips, sst_data, calib_data, clust_data, cpu_timing);
+    findCluster(i, nStreams, max_strips, sst_data, calib_data, clust_data, cpu_timing);
   }
 #endif
 
@@ -85,9 +86,8 @@ int main()
 #ifdef OUTPUT
   // print out the result
   for (i=0; i<nStreams; i++) {
-    //std::cout<<" Event "<<i<<std::endl;
 #ifdef USE_GPU
-    cpyGPUToCPU(i, nStreams, max_strips, nStrips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
+    cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
     sst_data->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
 #endif
     std::cout<<" Event "<<i<<" nSeedStripsNC "<<sst_data->nSeedStripsNC<<std::endl;
