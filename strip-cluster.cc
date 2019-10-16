@@ -73,6 +73,7 @@ int main()
 
     findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing[i], stream[i]);
   }
+  cudaDeviceSynchronize();
 #else
   for (int i=0; i<nStreams; i++) {
     setSeedStripsNCIndex(sst_data, calib_data, cpu_timing);
