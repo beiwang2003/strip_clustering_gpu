@@ -48,8 +48,7 @@ int main()
   calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
   clust_data_d = (clust_data_t *)malloc(sizeof(clust_data_t));
 
-  gpu_timing_t *gpu_timing = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
-
+  gpu_timing_t *gpu_timing[nStreams];
   cudaStream_t stream[nStreams];
   allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
   allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d);
@@ -57,26 +56,27 @@ int main()
     sst_data_d[i]->nStrips = sst_data->nStrips;
     allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
     cudaStreamCreate(&stream[i]);
+    gpu_timing[i] = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
+    gpu_timing[i]->memTransferTime = 0.0;
   }
 #endif
 
   double t0 = omp_get_wtime();
 
 #if USE_GPU
-  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing);
+  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
 #pragma omp parallel for num_threads(nStreams)
   for (int i=0; i<nStreams; i++) {
-    cpySSTDataToGPU(sst_data, sst_data_d[i], gpu_timing, stream[i]);
+    cpySSTDataToGPU(sst_data, sst_data_d[i], gpu_timing[i], stream[i]);
 
-    setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing, stream[i]);
-    //    std::cout<<"Event="<<i<<"GPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data_d[i]->nSeedStripsNC<<std::endl;
+    setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing[i], stream[i]);
 
-    findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing, stream[i]);
+    findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing[i], stream[i]);
   }
 #else
   for (int i=0; i<nStreams; i++) {
     setSeedStripsNCIndex(sst_data, calib_data, cpu_timing);
-    //std::cout<<"Event="<<i<<"CPU nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data->nSeedStripsNC<<std::endl;
+
     findCluster(i, nStreams, max_strips, sst_data, calib_data, clust_data, cpu_timing);
   }
 #endif
@@ -108,12 +108,12 @@ int main()
 #endif
 
 #ifdef USE_GPU
-  std::cout<<" GPU Memory Transfer Time "<<gpu_timing->memTransferTime<<std::endl;
-  std::cout<<" --setSeedStrips kernel Time "<<gpu_timing->setSeedStripsTime<<std::endl;
-  std::cout<<" --setNCSeedStrips kernel Time "<<gpu_timing->setNCSeedStripsTime<<std::endl;
-  std::cout<<" --setStripIndex kernel Time "<<gpu_timing->setStripIndexTime<<std::endl;
-  std::cout<<" --findBoundary GPU Kernel Time "<<gpu_timing->findBoundaryTime<<std::endl;
-  std::cout<<" --checkCluster GPU Kernel Time "<<gpu_timing->checkClusterTime<<std::endl;
+  std::cout<<" GPU Memory Transfer Time "<<gpu_timing[0]->memTransferTime<<std::endl;
+  std::cout<<" --setSeedStrips kernel Time "<<gpu_timing[0]->setSeedStripsTime<<std::endl;
+  std::cout<<" --setNCSeedStrips kernel Time "<<gpu_timing[0]->setNCSeedStripsTime<<std::endl;
+  std::cout<<" --setStripIndex kernel Time "<<gpu_timing[0]->setStripIndexTime<<std::endl;
+  std::cout<<" --findBoundary GPU Kernel Time "<<gpu_timing[0]->findBoundaryTime<<std::endl;
+  std::cout<<" --checkCluster GPU Kernel Time "<<gpu_timing[0]->checkClusterTime<<std::endl;
   std::cout<<" total Time (including HtoD data transfer) "<<t1-t0<<std::endl;
 #else
   std::cout<<" --setSeedStrips Time "<<cpu_timing->setSeedStripsTime<<std::endl;
@@ -129,12 +129,12 @@ int main()
     cudaStreamDestroy(stream[i]);
     freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i]);
     free(sst_data_d[i]);
+    free(gpu_timing[i]);
   }
   freeClustDataGPU(clust_data_d, pt_clust_data_d);
   free(clust_data_d);
   freeCalibDataGPU(calib_data_d, pt_calib_data_d);
   free(calib_data_d);
-  free(gpu_timing);
 #endif
 
   freeSSTData(sst_data);

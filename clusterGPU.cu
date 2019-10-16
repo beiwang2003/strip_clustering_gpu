@@ -44,7 +44,7 @@ static void gpu_timer_start(gpu_timing_t *gpu_timing, cudaStream_t stream) {
 
 static float gpu_timer_measure(gpu_timing_t *gpu_timing, cudaStream_t stream) {
   float elapsedTime;
-  cudaEventRecord(gpu_timing->stop,stream);
+  cudaEventRecord(gpu_timing->stop, stream);
   cudaEventSynchronize(gpu_timing->stop);
   cudaEventElapsedTime(&elapsedTime, gpu_timing->start, gpu_timing->stop);
   cudaEventRecord(gpu_timing->start, stream);
@@ -540,6 +540,6 @@ void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t 
   cudaBindTexture(0, adcTexRef, (void *)sst_data_d->adc, nStrips*sizeof(uint16_t));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransferTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->memTransferTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
