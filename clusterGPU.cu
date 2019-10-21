@@ -93,6 +93,7 @@ static void setSeedStripsGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d)
 __global__
 static void setNCSeedStripsGPU(sst_data_t *sst_data_d) {
   const int nStrips = sst_data_d->nStrips;
+  const detId_t *__restrict__ detId = sst_data_d->detId;
 #ifndef USE_TEXTURE
   const uint16_t *__restrict__ stripId = sst_data_d->stripId;
 #endif
@@ -106,7 +107,7 @@ static void setNCSeedStripsGPU(sst_data_t *sst_data_d) {
   int i = nthreads * bid + tid;
 
   if (i>0&&i<nStrips) {
-    if (seedStripsMask[i]&&seedStripsMask[i-1]&&(STRIPID(i)-STRIPID(i-1))==1) seedStripsNCMask[i] = 0;
+    if (seedStripsMask[i]&&seedStripsMask[i-1]&&(STRIPID(i)-STRIPID(i-1))==1&&(detId[i]==detId[i-1])) seedStripsNCMask[i] = 0;
   }
 }
 

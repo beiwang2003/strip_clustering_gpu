@@ -86,6 +86,7 @@ void freeClustData(clust_data_t *clust_data) {
 }
 
 void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing) {
+  const detId_t *__restrict__ detId = sst_data->detId;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
   const uint16_t *__restrict__ adc = sst_data->adc;
   const float *__restrict__ noise = calib_data->noise;
@@ -130,7 +131,7 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
 #pragma omp for simd aligned(seedStripsNCMask,prefixSeedStripsNCMask: CACHELINE_BYTES)
     for (int i=0; i<nStrips; i++) {
       int mask = seedStripsNCMask[i];
-      if (i>0&&seedStripsMask[i]&&seedStripsMask[i-1]&&(stripId[i]-stripId[i-1])==1) mask = 0;
+      if (i>0&&seedStripsMask[i]&&seedStripsMask[i-1]&&(stripId[i]-stripId[i-1])==1&&(detId[i]==detId[i-1])) mask = 0;
       prefixSeedStripsNCMask[i] = mask;
       seedStripsNCMask[i] = mask;
     }
