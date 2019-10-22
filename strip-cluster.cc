@@ -50,12 +50,12 @@ int main()
 
   gpu_timing_t *gpu_timing[nStreams];
   cudaStream_t stream[nStreams];
-  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
+  //allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
   allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d);
   for (int i=0; i<nStreams; i++) {
     sst_data_d[i]->nStrips = sst_data->nStrips;
-    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
-    cudaStreamCreate(&stream[i]);
+    //    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
+    //cudaStreamCreate(&stream[i]);
     gpu_timing[i] = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
     gpu_timing[i]->memTransferTime = 0.0;
   }
@@ -64,14 +64,21 @@ int main()
   double t0 = omp_get_wtime();
 
 #if USE_GPU
+  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
   cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
 #pragma omp parallel for num_threads(nStreams)
   for (int i=0; i<nStreams; i++) {
+    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
+
+    cudaStreamCreate(&stream[i]);
+
     cpySSTDataToGPU(sst_data, sst_data_d[i], gpu_timing[i], stream[i]);
 
     setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing[i], stream[i]);
 
     findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing[i], stream[i]);
+
+    cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
   }
   cudaDeviceSynchronize();
 #else
@@ -88,7 +95,7 @@ int main()
   // print out the result
   for (i=0; i<nStreams; i++) {
 #ifdef USE_GPU
-    cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
+    //cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
     sst_data->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
 #endif
     std::cout<<" Event "<<i<<" nSeedStripsNC "<<sst_data->nSeedStripsNC<<std::endl;

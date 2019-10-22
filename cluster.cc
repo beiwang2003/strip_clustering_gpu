@@ -7,39 +7,47 @@
 void allocateSSTData(int max_strips, sst_data_t *sst_data){
 #ifdef USE_GPU
   cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->stripId), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->adc), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->seedStripsNCIndex), max_strips*sizeof(int), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->seedStripsMask), max_strips*sizeof(int), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->seedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(sst_data->stripId), 2*max_strips*sizeof(uint16_t), cudaHostAllocDefault);
+  //cudaHostAlloc((void **)&(sst_data->adc), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
+  sst_data->adc = sst_data->stripId + max_strips;
+  cudaHostAlloc((void **)&(sst_data->seedStripsMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
+  //cudaHostAlloc((void **)&(sst_data->seedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
+  sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
+  cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
+  //cudaHostAlloc((void **)&(sst_data->seedStripsNCIndex), max_strips*sizeof(int), cudaHostAllocDefault);
+  sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
 #else
   sst_data->detId = (detId_t *)_mm_malloc(max_strips*sizeof(detId_t), IDEAL_ALIGNMENT);
-  sst_data->stripId = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
-  sst_data->adc = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
-
-  sst_data->seedStripsNCIndex = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  sst_data->seedStripsMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  sst_data->seedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  sst_data->prefixSeedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  sst_data->stripId = (uint16_t *)_mm_malloc(2*max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
+  //sst_data->adc = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
+  sst_data->adc = sst_data->stripId + max_strips;
+  sst_data->seedStripsMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  //sst_data->seedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
+  sst_data->prefixSeedStripsNCMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  //sst_data->seedStripsNCIndex = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
 #endif
 }
 
 void allocateCalibData(int max_strips, calib_data_t *calib_data){
-  calib_data->noise = (float *)_mm_malloc(max_strips*sizeof(float), IDEAL_ALIGNMENT);
-  calib_data->gain = (float *)_mm_malloc(max_strips*sizeof(float), IDEAL_ALIGNMENT);
+  calib_data->noise = (float *)_mm_malloc(2*max_strips*sizeof(float), IDEAL_ALIGNMENT);
+  //calib_data->gain = (float *)_mm_malloc(max_strips*sizeof(float), IDEAL_ALIGNMENT);
+  calib_data->gain = calib_data->noise + max_strips;
   calib_data->bad = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
 }
 
 void allocateClustData(int max_strips, clust_data_t *clust_data){
 #ifdef USE_GPU
-  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), max_strips*sizeof(int), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(clust_data->clusterLastIndexRight), max_strips*sizeof(int), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*max_strips*sizeof(int), cudaHostAllocDefault);
+  //cudaHostAlloc((void **)&(clust_data->clusterLastIndexRight), max_strips*sizeof(int), cudaHostAllocDefault);
+  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_strips;
   cudaHostAlloc((void **)&(clust_data->clusterADCs), max_strips*256*sizeof(uint8_t), cudaHostAllocDefault);
   cudaHostAlloc((void **)&(clust_data->trueCluster), max_strips*sizeof(bool), cudaHostAllocDefault);
 #else
-  clust_data->clusterLastIndexLeft = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  clust_data->clusterLastIndexRight = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  clust_data->clusterLastIndexLeft = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  //clust_data->clusterLastIndexRight = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
+  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_strips;
   clust_data->clusterADCs = (uint8_t *)_mm_malloc(max_strips*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
   clust_data->trueCluster = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
 #endif
@@ -49,37 +57,37 @@ void freeSSTData(sst_data_t *sst_data) {
 #ifdef USE_GPU
   cudaFreeHost(sst_data->detId);
   cudaFreeHost(sst_data->stripId);
-  cudaFreeHost(sst_data->adc);
-  cudaFreeHost(sst_data->seedStripsNCIndex);
+  //cudaFreeHost(sst_data->adc);
   cudaFreeHost(sst_data->seedStripsMask);
-  cudaFreeHost(sst_data->seedStripsNCMask);
+  //cudaFreeHost(sst_data->seedStripsNCMask);
   cudaFreeHost(sst_data->prefixSeedStripsNCMask);
+  //cudaFreeHost(sst_data->seedStripsNCIndex);
 #else
   free(sst_data->detId);
   free(sst_data->stripId);
-  free(sst_data->adc);
-  free(sst_data->seedStripsNCIndex);
+  //free(sst_data->adc);
   free(sst_data->seedStripsMask);
-  free(sst_data->seedStripsNCMask);
+  //free(sst_data->seedStripsNCMask);
   free(sst_data->prefixSeedStripsNCMask);
+  //free(sst_data->seedStripsNCIndex);
 #endif
 }
 
 void freeCalibData(calib_data_t *calib_data) {
   free(calib_data->noise);
-  free(calib_data->gain);
+  //free(calib_data->gain);
   free(calib_data->bad);
 }
 
 void freeClustData(clust_data_t *clust_data) {
 #ifdef USE_GPU
   cudaFreeHost(clust_data->clusterLastIndexLeft);
-  cudaFreeHost(clust_data->clusterLastIndexRight);
+  //cudaFreeHost(clust_data->clusterLastIndexRight);
   cudaFreeHost(clust_data->clusterADCs);
   cudaFreeHost(clust_data->trueCluster);
 #else
   free(clust_data->clusterLastIndexLeft);
-  free(clust_data->clusterLastIndexRight);
+  //free(clust_data->clusterLastIndexRight);
   free(clust_data->clusterADCs);
   free(clust_data->trueCluster);
 #endif
