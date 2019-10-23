@@ -1,15 +1,20 @@
-CC = g++
-CXXFLAGS += -std=c++14 -march=native -fopt-info-vec -fopenmp -O3 -DOUTPUT -DUSE_GPU #-DCPU_DEBUG -DOUTPUT 
-LDFLAGS += -std=c++14 -march=native -fopenmp -O3
+#CC = g++
+#CXXFLAGS += -std=c++14 -O3 -fopenmp -fopt-info-vec -march=native \
+# -I${CUDA_PATH}/include -DOUTPUT #-DUSE_GPU #-DCPU_DEBUG
+#LDFLAGS += -std=c++14 -O3 -fopenmp -march=native
 
-#CC = icpc
-#CXXFLAGS += -std=c++14 -xHost -qopt-report=5 -qopenmp -O3 -DOUTPUT
-#LDFLAGS += -std=c++14 -xHost -qopenmp -O3
+CC = icpc
+CXXFLAGS += -std=c++14 -O3 -qopenmp -qopt-report=5 -xHost \
+ -I${CUDA_PATH}/include -DOUTPUT #-DUSE_GPU
+LDFLAGS += -std=c++14 -O3 -fopenmp -xHost
 
 NVCC = nvcc
-CUDAFLAGS += --default-stream per-thread -std=c++14 -O3 -I/home/beiwang/clustering/cub-1.8.0 -gencode=arch=compute_60,code=\"sm_60,compute_60\" --ptxas-options=-v #-DGPU_TIMER #-DGPU_DEBUG #-DUSE_TEXTURE #-DGPU_DEBUG
-# -arch=sm_60 is equavalent to -gencode=arch=compute_60,code=\"sm_60,compute_60\"
-CUDALDFLAGS += -lcudart 
+#CUBROOT=/home/beiwang/clustering/cub-1.8.0
+CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
+ -gencode=arch=compute_60,code=\"sm_60,compute_60\"  \
+ -I${CUBROOT} -DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG
+# Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
+CUDALDFLAGS += -lcudart -L${CUDALIBDIR}
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o
 	$(CC) $(LDFLAGS) $(CUDALDFLAGS) -o strip-cluster strip-cluster.o cluster.o clusterGPU.o

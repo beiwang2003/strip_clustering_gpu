@@ -255,13 +255,17 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
        right=clusterLastIndexRight[i];
        size=right-left+1;
 
-       for (j=0; j<size; j++){
-	 adc_j = ADC(left+j);
-	 gain_j = GAIN(left+j);
-	 charge = static_cast<int>( static_cast<float>(adc_j)/gain_j + 0.5f );
-	 if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
-	 clusterADCs[j*nSeedStripsNC+i] = adc_j;
-	 adcSum += static_cast<float>(adc_j);
+       if (i>0&&clusterLastIndexLeft[i-1]==left) {
+         trueCluster[i] = 0;  // ignore duplicates
+       } else {
+         for (j=0; j<size; j++){
+	   adc_j = ADC(left+j);
+	   gain_j = GAIN(left+j);
+	   charge = static_cast<int>( static_cast<float>(adc_j)/gain_j + 0.5f );
+	   if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
+	   clusterADCs[j*nSeedStripsNC+i] = adc_j;
+	   adcSum += static_cast<float>(adc_j);
+         }
        }
 
        trueCluster[i] = (adcSum/0.047f) > minGoodCharge;

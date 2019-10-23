@@ -296,13 +296,17 @@ static void checkClusterCondition(int offset, sst_data_t *sst_data, calib_data_t
       int size=right-left+1;
       float adcSum=0.0f;
 
-      for (int j=0; j<size; j++){
-        uint8_t adc_j = adc[left+j];
-        float gain_j = gain[left+j];
-        auto charge = int( float(adc_j)/gain_j + 0.5f );
-        if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
-        clusterADCs[j*nSeedStripsNC+i] = adc_j;
-        adcSum += static_cast<float>(adc_j);
+      if (i>0&&clusterLastIndexLeft[i-1]==left) {
+        trueCluster[i] = 0;  // ignore duplicates
+      } else {
+        for (int j=0; j<size; j++) {
+          uint8_t adc_j = adc[left+j];
+          float gain_j = gain[left+j];
+          auto charge = int( float(adc_j)/gain_j + 0.5f );
+          if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
+          clusterADCs[j*nSeedStripsNC+i] = adc_j;
+          adcSum += static_cast<float>(adc_j);
+        }
       }
       trueCluster[i] = adcSum/0.047f > minGoodCharge;
     }
