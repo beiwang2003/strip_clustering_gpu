@@ -11,7 +11,9 @@
 #endif
 
 typedef	struct {
-  float memTransferTime;
+  float memTransHDTime;
+  float memTransDHTime;
+  float memAllocTime;
   float setSeedStripsTime;
   float setNCSeedStripsTime;
   float setStripIndexTime;
@@ -20,15 +22,15 @@ typedef	struct {
   cudaEvent_t start, stop;
 } gpu_timing_t;
 
-void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d);
-void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_t);
-void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_t);
+void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
+void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_t, gpu_timing_t *gpu_timing);
+void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_t, gpu_timing_t *gpu_timing);
 
 void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d);
 void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_t);
 void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d);
 
-void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, cudaStream_t stream);
+void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing);
 

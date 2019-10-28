@@ -279,7 +279,10 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
 }
 
 extern "C"
-void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d) {
+void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t* gpu_timing,  cudaStream_t stream) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
 #ifdef CACHE_ALLOC
   g_allocator.DeviceAllocate((void **)pt_sst_data_d, sizeof(sst_data_t));
   g_allocator.DeviceAllocate((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
@@ -314,10 +317,16 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   cudaMalloc((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes);
 #endif
   cudaMemcpy((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice);
+#ifdef GPU_TIMER
+  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
+#endif
 }
 
 extern "C"
-void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d) {
+void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, 0);
+#endif
 #ifdef CACHE_ALLOC
   g_allocator.DeviceAllocate((void **)pt_calib_data_d, sizeof(calib_data_t));
   g_allocator.DeviceAllocate((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
@@ -330,10 +339,16 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
   cudaMalloc((void **)&(calib_data_d->bad), max_strips*sizeof(bool));
 #endif
   cudaMemcpy((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice);
+#ifdef GPU_TIMER
+  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
+#endif
 }
 
 extern "C"
-void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d) {
+void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, 0);
+#endif
 #ifdef CACHE_ALLOC
   g_allocator.DeviceAllocate((void **)pt_clust_data_d, sizeof(clust_data_t));
   g_allocator.DeviceAllocate((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
@@ -348,6 +363,9 @@ void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data
   cudaMalloc((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
 #endif
   cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice);
+#ifdef GPU_TIMER
+  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
+#endif
 }
 
 extern "C"
@@ -556,7 +574,7 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
 
 
 extern "C"
-void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, cudaStream_t stream) {
+void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
   int offset = event*(max_strips/nStreams);
   //  cudaDeviceSynchronize();
   //cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
@@ -565,12 +583,18 @@ void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t * sst_data_
 
   int nSeedStripsNC = 150000;
   //std::cout<<"cpyGPUtoCPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
   cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft+offset), clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
   cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight+offset), clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
   cudaMemcpyAsync((void *)(clust_data->clusterADCs+offset*256), clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost, stream);
   cudaMemcpyAsync((void *)(clust_data->trueCluster+offset), clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream);
   cudaStreamSynchronize(stream);
   cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost);
+#ifdef GPU_TIMER
+  gpu_timing->memTransDHTime += gpu_timer_measure_end(gpu_timing, 0);
+#endif
 }
 
 extern "C"
@@ -585,7 +609,7 @@ void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *c
   cudaBindTexture(0, gainTexRef, (void *)calib_data_d->gain, max_strips*sizeof(float));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransferTime = gpu_timer_measure_end(gpu_timing, 0);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, 0);
 #endif
 }
 
@@ -603,6 +627,6 @@ void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t 
   cudaBindTexture(0, adcTexRef, (void *)sst_data_d->adc, nStrips*sizeof(uint16_t));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransferTime += gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
