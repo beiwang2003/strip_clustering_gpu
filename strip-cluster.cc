@@ -49,16 +49,13 @@ int main()
   clust_data_d = (clust_data_t *)malloc(sizeof(clust_data_t));
 
   gpu_timing_t *gpu_timing[nStreams];
-  cudaStream_t stream[nStreams];
-  //allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
   allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d);
   for (int i=0; i<nStreams; i++) {
     sst_data_d[i]->nStrips = sst_data->nStrips;
-    //    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
-    //cudaStreamCreate(&stream[i]);
     gpu_timing[i] = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
     gpu_timing[i]->memTransferTime = 0.0;
   }
+  cudaStream_t stream[nStreams];
 #endif
 
   double t0 = omp_get_wtime();

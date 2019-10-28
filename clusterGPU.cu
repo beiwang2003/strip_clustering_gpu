@@ -1,6 +1,11 @@
 #include "clusterGPU.cuh"
-#include <cub/cub.cuh>
 #include <stdio.h>
+#include <cub/cub.cuh>
+#include <cub/util_allocator.cuh>
+
+#ifdef CACHE_ALLOC
+static cub::CachingDeviceAllocator g_allocator(true);
+#endif
 
 #if USE_TEXTURE
 texture<float, 1, cudaReadModeElementType> noiseTexRef;
@@ -275,16 +280,30 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
 
 extern "C"
 void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceAllocate((void **)pt_sst_data_d, sizeof(sst_data_t));
+  g_allocator.DeviceAllocate((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
+  sst_data_d->adc = sst_data_d->stripId + max_strips;
+  g_allocator.DeviceAllocate((void **)&(sst_data_d->detId), max_strips*sizeof(detId_t));
+  g_allocator.DeviceAllocate((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int));
+  sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
+  g_allocator.DeviceAllocate((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int));
+  sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
+  sst_data_d->d_temp_storage=NULL;
+  sst_data_d->temp_storage_bytes=0;
+  cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, sst_data_d->nStrips);
+#ifdef GPU_DEBUG
+  std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
+#endif
+  g_allocator.DeviceAllocate((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes);
+#else
   cudaMalloc((void **)pt_sst_data_d, sizeof(sst_data_t));
   cudaMalloc((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
-  //cudaMalloc((void **)&(sst_data_d->adc), max_strips*sizeof(uint16_t));
   sst_data_d->adc = sst_data_d->stripId + max_strips;
   cudaMalloc((void **)&(sst_data_d->detId), max_strips*sizeof(detId_t));
   cudaMalloc((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int));
-  //cudaMalloc((void **)&(sst_data_d->seedStripsNCMask), max_strips*sizeof(int));
   sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
   cudaMalloc((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int));
-  //cudaMalloc((void **)&(sst_data_d->seedStripsNCIndex), max_strips*sizeof(int));
   sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
   sst_data_d->d_temp_storage=NULL;
   sst_data_d->temp_storage_bytes=0;
@@ -293,40 +312,59 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
 #endif
   cudaMalloc((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes);
+#endif
   cudaMemcpy((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice);
 }
 
 extern "C"
 void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceAllocate((void **)pt_calib_data_d, sizeof(calib_data_t));
+  g_allocator.DeviceAllocate((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
+  calib_data_d->gain = calib_data_d->noise + max_strips;
+  g_allocator.DeviceAllocate((void **)&(calib_data_d->bad), max_strips*sizeof(bool));
+#else
   cudaMalloc((void **)pt_calib_data_d, sizeof(calib_data_t));
   cudaMalloc((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
-  //cudaMalloc((void **)&(calib_data_d->gain), max_strips*sizeof(float));
   calib_data_d->gain = calib_data_d->noise + max_strips;
   cudaMalloc((void **)&(calib_data_d->bad), max_strips*sizeof(bool));
+#endif
   cudaMemcpy((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice);
 }
 
 extern "C"
 void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceAllocate((void **)pt_clust_data_d, sizeof(clust_data_t));
+  g_allocator.DeviceAllocate((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
+  clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
+  g_allocator.DeviceAllocate((void **)&(clust_data_d->clusterADCs), max_strips*256*sizeof(uint8_t));
+  g_allocator.DeviceAllocate((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
+#else
   cudaMalloc((void **)pt_clust_data_d, sizeof(clust_data_t));
   cudaMalloc((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
-  //cudaMalloc((void **)&(clust_data_d->clusterLastIndexRight), max_strips*sizeof(int));
   clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
   cudaMalloc((void **)&(clust_data_d->clusterADCs), max_strips*256*sizeof(uint8_t));
   cudaMalloc((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
+#endif
   cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice);
 }
 
 extern "C"
 void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceFree(pt_sst_data_d);
+  g_allocator.DeviceFree(sst_data_d->stripId);
+  g_allocator.DeviceFree(sst_data_d->detId);
+  g_allocator.DeviceFree(sst_data_d->seedStripsMask);
+  g_allocator.DeviceFree(sst_data_d->prefixSeedStripsNCMask);
+#else
   cudaFree(pt_sst_data_d);
   cudaFree(sst_data_d->stripId);
   cudaFree(sst_data_d->detId);
-  //cudaFree(sst_data_d->adc);
   cudaFree(sst_data_d->seedStripsMask);
-  //cudaFree(sst_data_d->seedStripsNCMask);
   cudaFree(sst_data_d->prefixSeedStripsNCMask);
-  //cudaFree(sst_data_d->seedStripsNCIndex);
+#endif
 #if USE_TEXTURE
   cudaUnbindTexture(stripIdTexRef);
   cudaUnbindTexture(adcTexRef);
@@ -335,10 +373,15 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d) {
 
 extern "C"
 void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceFree(pt_calib_data_d);
+  g_allocator.DeviceFree(calib_data_d->noise);
+  g_allocator.DeviceFree(calib_data_d->bad);
+#else
   cudaFree(pt_calib_data_d);
   cudaFree(calib_data_d->noise);
-  //cudaFree(calib_data_d->gain);
   cudaFree(calib_data_d->bad);
+#endif
 #if USE_TEXTURE
   cudaUnbindTexture(noiseTexRef);
   cudaUnbindTexture(gainTexRef);
@@ -347,11 +390,17 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d)
 
 extern "C"
 void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d) {
+#ifdef CACHE_ALLOC
+  g_allocator.DeviceFree(pt_clust_data_d);
+  g_allocator.DeviceFree(clust_data_d->clusterLastIndexLeft);
+  g_allocator.DeviceFree(clust_data_d->clusterADCs);
+  g_allocator.DeviceFree(clust_data_d->trueCluster);
+#else
   cudaFree(pt_clust_data_d);
   cudaFree(clust_data_d->clusterLastIndexLeft);
-  //cudaFree(clust_data_d->clusterLastIndexRight);
   cudaFree(clust_data_d->clusterADCs);
   cudaFree(clust_data_d->trueCluster);
+#endif
 }
 
 extern "C"
