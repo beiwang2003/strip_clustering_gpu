@@ -44,16 +44,17 @@ int main()
   clust_data_t *clust_data_d, *pt_clust_data_d;
   for (int i=0; i<nStreams; i++) {
     sst_data_d[i] = (sst_data_t *)malloc(sizeof(sst_data_t));
+    sst_data_d[i]->nStrips = sst_data->nStrips;
   }
   calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
   clust_data_d = (clust_data_t *)malloc(sizeof(clust_data_t));
 
   gpu_timing_t *gpu_timing[nStreams];
-  allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d);
   for (int i=0; i<nStreams; i++) {
-    sst_data_d[i]->nStrips = sst_data->nStrips;
     gpu_timing[i] = (gpu_timing_t *)malloc(sizeof(gpu_timing_t));
-    gpu_timing[i]->memTransferTime = 0.0;
+    gpu_timing[i]->memTransDHTime = 0.0;
+    gpu_timing[i]->memTransHDTime = 0.0;
+    gpu_timing[i]->memAllocTime = 0.0;
   }
   cudaStream_t stream[nStreams];
 #endif
@@ -61,13 +62,14 @@ int main()
   double t0 = omp_get_wtime();
 
 #if USE_GPU
-  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d);
+  allocateClustDataGPU(max_strips, clust_data_d, &pt_clust_data_d, gpu_timing[0]);
+  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0]);
   cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
 #pragma omp parallel for num_threads(nStreams)
   for (int i=0; i<nStreams; i++) {
-    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i]);
-
     cudaStreamCreate(&stream[i]);
+
+    allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i], gpu_timing[i], stream[i]);
 
     cpySSTDataToGPU(sst_data, sst_data_d[i], gpu_timing[i], stream[i]);
 
@@ -75,7 +77,7 @@ int main()
 
     findClusterGPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d, pt_clust_data_d, gpu_timing[i], stream[i]);
 
-    cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, stream[i]);
+    cpyGPUToCPU(i, nStreams, max_strips, sst_data_d[i], pt_sst_data_d[i], clust_data, clust_data_d, gpu_timing[i], stream[i]);
   }
   cudaDeviceSynchronize();
 #else
@@ -113,20 +115,23 @@ int main()
 #endif
 
 #ifdef USE_GPU
-  std::cout<<" GPU Memory Transfer Time "<<gpu_timing[0]->memTransferTime<<std::endl;
+  std::cout<<" GPU Memory Transfer Host to Device Time "<<gpu_timing[0]->memTransHDTime<<std::endl;
+  std::cout<<" GPU Memory Transfer Device to Host Time "<<gpu_timing[0]->memTransDHTime<<std::endl;
+  std::cout<<" GPU Memory Allocation Time "<<gpu_timing[0]->memAllocTime<<std::endl;
+  std::cout<<" GPU Kernel Time "<<std::endl;
   std::cout<<" --setSeedStrips kernel Time "<<gpu_timing[0]->setSeedStripsTime<<std::endl;
   std::cout<<" --setNCSeedStrips kernel Time "<<gpu_timing[0]->setNCSeedStripsTime<<std::endl;
   std::cout<<" --setStripIndex kernel Time "<<gpu_timing[0]->setStripIndexTime<<std::endl;
   std::cout<<" --findBoundary GPU Kernel Time "<<gpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" --checkCluster GPU Kernel Time "<<gpu_timing[0]->checkClusterTime<<std::endl;
-  std::cout<<" total Time (including HtoD data transfer) "<<t1-t0<<std::endl;
+  std::cout<<" Total Time (including data allocation, transfer and kernel cost) "<<t1-t0<<std::endl;
 #else
-  std::cout<<" --setSeedStrips Time "<<cpu_timing->setSeedStripsTime<<std::endl;
-  std::cout<<" --setNCSeedStrips Time "<<cpu_timing->setNCSeedStripsTime<<std::endl;
-  std::cout<<" --setStripIndex Time "<<cpu_timing->setStripIndexTime<<std::endl;
-  std::cout<<" --findBoundary Time "<<cpu_timing->findBoundaryTime<<std::endl;
-  std::cout<<" --checkCluster Time "<<cpu_timing->checkClusterTime<<std::endl;
-  std::cout<<" total Time "<<t1-t0<<std::endl;
+  std::cout<<" setSeedStrips function Time "<<cpu_timing->setSeedStripsTime<<std::endl;
+  std::cout<<" setNCSeedStrips function Time "<<cpu_timing->setNCSeedStripsTime<<std::endl;
+  std::cout<<" setStripIndex function Time "<<cpu_timing->setStripIndexTime<<std::endl;
+  std::cout<<" findBoundary function Time "<<cpu_timing->findBoundaryTime<<std::endl;
+  std::cout<<" checkCluster function Time "<<cpu_timing->checkClusterTime<<std::endl;
+  std::cout<<" Total Time "<<t1-t0<<std::endl;
 #endif
 
 #ifdef USE_GPU
