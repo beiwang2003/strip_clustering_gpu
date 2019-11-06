@@ -1,7 +1,7 @@
-CMSSW_CUDAUTILS_PATH=/home/beiwang/cmssw
+CMSSW_CUDAUTILS_PATH=/home/beiwang/clustering/cmssw
 #git clone https://github.com/cms-patatrack/cmssw.git
 EXTERNAL_SOURCE = ${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
-CUDA_API_PATH=/home/beiwang/cuda-api-wrappers/src
+CUDA_API_PATH=/home/beiwang/clustering/cuda-api-wrappers/src
 #git clone https://github.com/cms-externals/cuda-api-wrappers.git
 
 CC = g++
