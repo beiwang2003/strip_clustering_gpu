@@ -2,6 +2,9 @@
 #define _CLUSTER_
 #include <cstdlib>
 #include <cstdint>
+//#ifdef USE_GPU
+#include <cuda_runtime_api.h>
+//#endif
 #if _OPENMP
 #include <omp.h>
 #endif
@@ -40,9 +43,9 @@ typedef struct {
   float checkClusterTime;
 } cpu_timing_t;
 
-void allocateSSTData(int max_strips, sst_data_t *sst_data);
+void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream);
 void allocateCalibData(int max_strips, calib_data_t *calib_data);
-void allocateClustData(int max_strips, clust_data_t *clust_data);
+void allocateClustData(int max_strips, clust_data_t *clust_data, cudaStream_t stream);
 
 void freeSSTData(sst_data_t *sst_data);
 void freeCalibData(calib_data_t *calib_data_t);
@@ -50,6 +53,6 @@ void freeClustData(clust_data_t *clust_data_t);
 
 void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_timing_t *cpu_timing);
 
-void findCluster(int event, int nStreams, int max_strips, sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
+void findCluster(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing);
 
 #endif

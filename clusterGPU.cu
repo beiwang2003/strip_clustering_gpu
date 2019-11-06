@@ -2,10 +2,13 @@
 #include <stdio.h>
 #include <cub/cub.cuh>
 #include <cub/util_allocator.cuh>
-
 #ifdef CACHE_ALLOC
-static cub::CachingDeviceAllocator g_allocator(true);
+#include <HeterogeneousCore/CUDAUtilities/interface/allocate_device.h>
 #endif
+
+//#ifdef CACHE_ALLOC
+//static cub::CachingDeviceAllocator g_allocator(true);
+//#endif
 
 #if USE_TEXTURE
 texture<float, 1, cudaReadModeElementType> noiseTexRef;
@@ -139,7 +142,7 @@ static void setStripIndexGPU(sst_data_t *sst_data_d) {
 }
 
 __global__
-static void findLeftRightBoundaryGPU(int offset, sst_data_t *sst_data_d, calib_data_t *calib_data_d, clust_data_t *clust_data_d) {
+static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d, clust_data_t *clust_data_d) {
   const int nStrips = sst_data_d->nStrips;
   const int *__restrict__ seedStripsNCIndex = sst_data_d->seedStripsNCIndex;
   const int nSeedStripsNC = sst_data_d->nSeedStripsNC;
@@ -149,9 +152,9 @@ static void findLeftRightBoundaryGPU(int offset, sst_data_t *sst_data_d, calib_d
   const uint16_t *__restrict__ adc = sst_data_d->adc;
   const float *__restrict__ noise = calib_data_d->noise;
 #endif
-  int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft+offset;
-  int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight+offset;
-  bool *__restrict__ trueCluster = clust_data_d->trueCluster+offset;
+  int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft;
+  int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight;
+  bool *__restrict__ trueCluster = clust_data_d->trueCluster;
 
    const uint8_t MaxSequentialHoles = 0;
    const float  ChannelThreshold = 2.0;
@@ -227,7 +230,7 @@ static void findLeftRightBoundaryGPU(int offset, sst_data_t *sst_data_d, calib_d
 }
 
 __global__
-static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_data_t *calib_data_d, clust_data_t *clust_data_d) {
+static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d, clust_data_t *clust_data_d) {
 #ifndef USE_TEXTURE
    const uint16_t *__restrict__ stripId = sst_data_d->stripId;
    const uint16_t *__restrict__ adc = sst_data_d->adc;
@@ -235,11 +238,10 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
    const float *__restrict__ gain = calib_data_d->gain;
 #endif
    const int nSeedStripsNC = sst_data_d->nSeedStripsNC;
-   int offset256 = offset*256;
-   const int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft+offset;
-   const int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight+offset;
-   uint8_t *__restrict__ clusterADCs = clust_data_d->clusterADCs+offset256;
-   bool *__restrict__ trueCluster = clust_data_d->trueCluster+offset;
+   const int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft;
+   const int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight;
+   uint8_t *__restrict__ clusterADCs = clust_data_d->clusterADCs;
+   bool *__restrict__ trueCluster = clust_data_d->trueCluster;
    const float minGoodCharge = 1620.0;
 
    const int tid = threadIdx.x;
@@ -279,34 +281,26 @@ static void checkClusterConditionGPU(int offset, sst_data_t *sst_data_d, calib_d
 }
 
 extern "C"
-void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t* gpu_timing,  cudaStream_t stream) {
+void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t* gpu_timing,  int dev, cudaStream_t stream) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
+
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceAllocate((void **)pt_sst_data_d, sizeof(sst_data_t));
-  g_allocator.DeviceAllocate((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
-  sst_data_d->adc = sst_data_d->stripId + max_strips;
-  g_allocator.DeviceAllocate((void **)&(sst_data_d->detId), max_strips*sizeof(detId_t));
-  g_allocator.DeviceAllocate((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int));
-  sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
-  g_allocator.DeviceAllocate((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int));
-  sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
-  sst_data_d->d_temp_storage=NULL;
-  sst_data_d->temp_storage_bytes=0;
-  cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, sst_data_d->nStrips);
-#ifdef GPU_DEBUG
-  std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
-#endif
-  g_allocator.DeviceAllocate((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes);
+  *pt_sst_data_d = (sst_data_t *)cudautils::allocate_device(dev, sizeof(sst_data_t), stream);
+  sst_data_d->detId = (detId_t*)cudautils::allocate_device(dev, max_strips*sizeof(detId_t), stream);
+  sst_data_d->stripId = (uint16_t *)cudautils::allocate_device(dev, 2*max_strips*sizeof(uint16_t), stream);
+  sst_data_d->prefixSeedStripsNCMask = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
 #else
   cudaMalloc((void **)pt_sst_data_d, sizeof(sst_data_t));
-  cudaMalloc((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
-  sst_data_d->adc = sst_data_d->stripId + max_strips;
   cudaMalloc((void **)&(sst_data_d->detId), max_strips*sizeof(detId_t));
+  cudaMalloc((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t));
   cudaMalloc((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int));
-  sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
   cudaMalloc((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int));
+#endif
+
+  sst_data_d->adc = sst_data_d->stripId + max_strips;
+  sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
   sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
   sst_data_d->d_temp_storage=NULL;
   sst_data_d->temp_storage_bytes=0;
@@ -314,72 +308,79 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
 #ifdef GPU_DEBUG
   std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
 #endif
+
+#ifdef CACHE_ALLOC
+  sst_data_d->d_temp_storage = cudautils::allocate_device(dev, sst_data_d->temp_storage_bytes, stream);
+#else
   cudaMalloc((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes);
-#endif
+#endif // end CACHE_ALLOC
   cudaMemcpy((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice);
+
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
 extern "C"
-void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing) {
+void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing, int dev, cudaStream_t stream) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, 0);
 #endif
+
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceAllocate((void **)pt_calib_data_d, sizeof(calib_data_t));
-  g_allocator.DeviceAllocate((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
-  calib_data_d->gain = calib_data_d->noise + max_strips;
-  g_allocator.DeviceAllocate((void **)&(calib_data_d->bad), max_strips*sizeof(bool));
+  *pt_calib_data_d = (calib_data_t *)cudautils::allocate_device(dev, sizeof(calib_data_t), stream);
+  calib_data_d->noise = (float *)cudautils::allocate_device(dev, 2*max_strips*sizeof(float), stream);
+  calib_data_d->bad = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream)
 #else
   cudaMalloc((void **)pt_calib_data_d, sizeof(calib_data_t));
   cudaMalloc((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
-  calib_data_d->gain = calib_data_d->noise + max_strips;
   cudaMalloc((void **)&(calib_data_d->bad), max_strips*sizeof(bool));
 #endif
+  calib_data_d->gain = calib_data_d->noise + max_strips;
   cudaMemcpy((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice);
+
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
 #endif
 }
 
 extern "C"
-void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing) {
+  void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, 0);
 #endif
+
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceAllocate((void **)pt_clust_data_d, sizeof(clust_data_t));
-  g_allocator.DeviceAllocate((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
-  clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
-  g_allocator.DeviceAllocate((void **)&(clust_data_d->clusterADCs), max_strips*256*sizeof(uint8_t));
-  g_allocator.DeviceAllocate((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
+  *pt_clust_data_d = (clust_data_t *)cudautils::allocate_device(dev, sizeof(clust_data_t), stream);
+  clust_data_d->clusterLastIndexLeft = (int *)cudautils::allocate_device(dev, 2*max_stirps*sizeof(int), stream);
+  clust_data_d->clustADCs = (uint8_t *)cudautils::allocate_device(dev, max_strips*256*sizeof(uint8_t), stream);
+  clust_data_d->trueCluster = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream);
 #else
   cudaMalloc((void **)pt_clust_data_d, sizeof(clust_data_t));
   cudaMalloc((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
-  clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
   cudaMalloc((void **)&(clust_data_d->clusterADCs), max_strips*256*sizeof(uint8_t));
   cudaMalloc((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
 #endif
+  clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
   cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice);
+
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
 #endif
 }
 
 extern "C"
-void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d) {
+  void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, int dev) {
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceFree(pt_sst_data_d);
-  g_allocator.DeviceFree(sst_data_d->stripId);
-  g_allocator.DeviceFree(sst_data_d->detId);
-  g_allocator.DeviceFree(sst_data_d->seedStripsMask);
-  g_allocator.DeviceFree(sst_data_d->prefixSeedStripsNCMask);
+  cudautils::free_device(dev, pt_sst_data_d);
+  cudautils::free_device(dev, sst_data_d->detId);
+  cudautils::free_device(dev, sst_data_d->stripId);
+  cudautils::free_device(dev, sst_data_d->seedStripsMask);
+  cudautils::free_device(dev, sst_data_d->prefixSeedStripsNCMask);
 #else
   cudaFree(pt_sst_data_d);
-  cudaFree(sst_data_d->stripId);
   cudaFree(sst_data_d->detId);
+  cudaFree(sst_data_d->stripId);
   cudaFree(sst_data_d->seedStripsMask);
   cudaFree(sst_data_d->prefixSeedStripsNCMask);
 #endif
@@ -390,11 +391,11 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d) {
 }
 
 extern "C"
-void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d) {
+void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, int dev) {
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceFree(pt_calib_data_d);
-  g_allocator.DeviceFree(calib_data_d->noise);
-  g_allocator.DeviceFree(calib_data_d->bad);
+  cudautils::free_device(dev, pt_calib_data_d);
+  cudautils::free_device(dev, calib_data_d->noise);
+  cudautils::free_device(dev, calib_data_d->bad);
 #else
   cudaFree(pt_calib_data_d);
   cudaFree(calib_data_d->noise);
@@ -407,12 +408,12 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d)
 }
 
 extern "C"
-void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d) {
+  void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, int dev) {
 #ifdef CACHE_ALLOC
-  g_allocator.DeviceFree(pt_clust_data_d);
-  g_allocator.DeviceFree(clust_data_d->clusterLastIndexLeft);
-  g_allocator.DeviceFree(clust_data_d->clusterADCs);
-  g_allocator.DeviceFree(clust_data_d->trueCluster);
+  cudautils::free_device(dev, pt_clust_data_d);
+  cudautils::free_device(dev, clust_data_d->clusterLastIndexLeft);
+  cudautils::free_device(dev, clusterADCs);
+  cudautils::free_device(dev, trueCluster);
 #else
   cudaFree(pt_clust_data_d);
   cudaFree(clust_data_d->clusterLastIndexLeft);
@@ -422,7 +423,7 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d)
 }
 
 extern "C"
-void findClusterGPU(int event, int nStreams, int max_strips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
+void findClusterGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
@@ -430,7 +431,6 @@ void findClusterGPU(int event, int nStreams, int max_strips, sst_data_t *sst_dat
   //int nSeedStripsNC = sst_data_d->nSeedStripsNC;
   int nSeedStripsNC = 150000;
   int nblocks = (nSeedStripsNC+nthreads-1)/nthreads;
-  int offset = event*(max_strips/nStreams);
 
 #ifdef GPU_DEBUG
   int nStrips = sst_data_d->nStrips;
@@ -454,12 +454,12 @@ void findClusterGPU(int event, int nStreams, int max_strips, sst_data_t *sst_dat
   free(cpu_noise);
 #endif
 
-  findLeftRightBoundaryGPU<<<nblocks, nthreads, 0, stream>>>(offset, pt_sst_data_d, pt_calib_data_d, pt_clust_data_d);
+  findLeftRightBoundaryGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d, pt_calib_data_d, pt_clust_data_d);
 #ifdef GPU_TIMER
   gpu_timing->findBoundaryTime = gpu_timer_measure(gpu_timing, stream);
 #endif
 
-  checkClusterConditionGPU<<<nblocks, nthreads, 0, stream>>>(offset, pt_sst_data_d, pt_calib_data_d, pt_clust_data_d);
+  checkClusterConditionGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d, pt_calib_data_d, pt_clust_data_d);
 
 #ifdef GPU_TIMER
   gpu_timing->checkClusterTime = gpu_timer_measure_end(gpu_timing, stream);
@@ -472,11 +472,11 @@ void findClusterGPU(int event, int nStreams, int max_strips, sst_data_t *sst_dat
   uint8_t *ADCs = (uint8_t*)malloc(nSeedStripsNC*256*sizeof(uint8_t));
   //  cudaStreamSynchronize(stream);
   //nSeedStripsNC=sst_data_d->nSeedStripsNC;
-  std::cout<<"findClusterGPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
-  cudaMemcpyAsync((void *)clusterLastIndexLeft, clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpyAsync((void *)clusterLastIndexRight, clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpyAsync((void *)trueCluster, clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
-  cudaMemcpyAsync((void *)ADCs, clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+  std::cout<<"findClusterGPU"<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
+  cudaMemcpyAsync((void *)clusterLastIndexLeft, clust_data_d[i]->clusterLastIndexLeft, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)clusterLastIndexRight, clust_data_d[i]->clusterLastIndexRight, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)trueCluster, clust_data_d[i]->trueCluster, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync((void *)ADCs, clust_data_d[i]->clusterADCs, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost);
 
   cudaStreamSynchronize(stream);
   nSeedStripsNC=sst_data_d->nSeedStripsNC;
@@ -574,8 +574,7 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
 
 
 extern "C"
-void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
-  int offset = event*(max_strips/nStreams);
+void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
   //  cudaDeviceSynchronize();
   //cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
   //cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost);
@@ -584,12 +583,12 @@ void cpyGPUToCPU(int event, int nStreams, int max_strips, sst_data_t * sst_data_
   int nSeedStripsNC = 150000;
   //std::cout<<"cpyGPUtoCPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #ifdef GPU_TIMER
-  gpu_timer_start(gpu_timing, stream);
+  gpu_timer_start(gpu_timing, 0);
 #endif
-  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft+offset), clust_data_d->clusterLastIndexLeft+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
-  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight+offset), clust_data_d->clusterLastIndexRight+offset, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
-  cudaMemcpyAsync((void *)(clust_data->clusterADCs+offset*256), clust_data_d->clusterADCs+offset*256, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost, stream);
-  cudaMemcpyAsync((void *)(clust_data->trueCluster+offset), clust_data_d->trueCluster+offset, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft), clust_data_d->clusterLastIndexLeft, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight), clust_data_d->clusterLastIndexRight, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->clusterADCs), clust_data_d->clusterADCs, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->trueCluster), clust_data_d->trueCluster, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream);
   cudaStreamSynchronize(stream);
   cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost);
 #ifdef GPU_TIMER
