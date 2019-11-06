@@ -1,28 +1,30 @@
-CMSSW_CUDAUTILS_PATH=/home/beiwang/clustering/cmssw
+CMSSW_CUDAUTILS_PATH=../cmssw
 #git clone https://github.com/cms-patatrack/cmssw.git
 EXTERNAL_SOURCE = ${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
-CUDA_API_PATH=/home/beiwang/clustering/cuda-api-wrappers/src
+CUDA_API_PATH=../cuda-api-wrappers/src
 #git clone https://github.com/cms-externals/cuda-api-wrappers.git
 
 CC = g++
 CXXFLAGS += -std=c++14 -O3 -fopenmp -fopt-info-vec -march=native \
- -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} -DUSE_GPU -DCACHE_ALLOC #-DOUTPUT #-DCPU_DEBUG
-LDFLAGS += -std=c++14 -O3 -fopenmp -march=native
+ -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
+ -mprefer-vector-width=512 #-DUSE_GPU -DCACHE_ALLOC #-DOUTPUT #-DCPU_DEBUG
+LDFLAGS += -std=c++14 -O3 -fopenmp -march=native -mprefer-vector-width=512
 
 #CC = icpc
 #CXXFLAGS += -std=c++14 -O3 -qopenmp -qopt-report=5 -xHost \
-# -I${CUDA_PATH}/include -DOUTPUT #-DUSE_GPU
-#LDFLAGS += -std=c++14 -O3 -fopenmp -xHost
+# -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
+# -qopt-zmm-usage=high #-DOUTPUT #-DUSE_GPU
+#LDFLAGS += -std=c++14 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 
 NVCC = nvcc
-CUBROOT=/home/beiwang/clustering/cub-1.8.0
+CUBROOT=../cub-1.8.0
 #git clone https://github.com/NVlabs/cub.git
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
  -gencode=arch=compute_60,code=\"sm_60,compute_60\"  \
  -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} -DCUB_STDERR \
-#-DGPU_TIMER #-DCACHE_ALLOC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG
+ -DGPU_TIMER #-DCACHE_ALLOC #-DUSE_TEXTURE -DGPU_DEBUG
 # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
-CUDALDFLAGS += -lcudart -L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
+CUDALDFLAGS += -lcudart -L${CUDALIBDIR}
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o allocate_host.o allocate_device.o
 	$(CC) $(LDFLAGS) $(CUDALDFLAGS) -o strip-cluster strip-cluster.o cluster.o \
