@@ -228,7 +228,7 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
 
 #ifdef CPU_DEBUG
   for (int i=0; i<nStrips; i++) {
-    if (seedStripNCMask[i])
+    if (seedStripsNCMask[i])
       std::cout<<" i "<<i<<" mask "<<seedStripsNCMask[i]<<" prefix "<<prefixSeedStripsNCMask[i]<<" index "<<seedStripsNCIndex[i]<<std::endl;
   }
   std::cout<<"nStrips="<<nStrips<<"nSeedStripsNC="<<sst_data->nSeedStripsNC<<std::endl;

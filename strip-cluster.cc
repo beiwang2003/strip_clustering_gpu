@@ -102,6 +102,8 @@ int main()
   }
   cudaDeviceSynchronize();
 #else
+  omp_set_nested(true);
+#pragma omp parallel for num_threads(5)
   for (int i=0; i<nStreams; i++) {
 
     setSeedStripsNCIndex(sst_data[i], calib_data, cpu_timing[i]);
@@ -152,6 +154,7 @@ int main()
   std::cout<<" findBoundary function Time "<<cpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" checkCluster function Time "<<cpu_timing[0]->checkClusterTime<<std::endl;
   std::cout<<" Total Time "<<t1-t0<<std::endl;
+  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
 #endif
 
 #ifdef USE_GPU
