@@ -24,7 +24,7 @@ ifeq ($(COMPILER), gnu)
 	CC = g++
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -fopt-info-vec -march=native \
 	-I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
-	-mprefer-vector-width=512 #-DUSE_GPU -DCACHE_ALLOC #-DOUTPUT #-DCPU_DEBUG
+	-mprefer-vector-width=512 -DUSE_GPU -DCACHE_ALLOC #-DOUTPUT #-DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native -mprefer-vector-width=512
 endif
 
@@ -40,7 +40,7 @@ NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
  -gencode=arch=compute_60,code=\"sm_60,compute_60\"  \
  -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} -DCUB_STDERR \
- -DGPU_TIMER #-DCACHE_ALLOC #-DUSE_TEXTURE -DGPU_DEBUG
+ -DCACHE_ALLOC #-DGPU_TIMER -DCACHE_ALLOC #-DUSE_TEXTURE -DGPU_DEBUG
 # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L${CUDALIBDIR} \
 -L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src

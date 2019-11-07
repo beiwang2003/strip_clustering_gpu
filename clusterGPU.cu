@@ -290,6 +290,7 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   *pt_sst_data_d = (sst_data_t *)cudautils::allocate_device(dev, sizeof(sst_data_t), stream);
   sst_data_d->detId = (detId_t*)cudautils::allocate_device(dev, max_strips*sizeof(detId_t), stream);
   sst_data_d->stripId = (uint16_t *)cudautils::allocate_device(dev, 2*max_strips*sizeof(uint16_t), stream);
+  sst_data_d->seedStripsMask = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
   sst_data_d->prefixSeedStripsNCMask = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
 #else
   cudaMalloc((void **)pt_sst_data_d, sizeof(sst_data_t));
@@ -330,7 +331,7 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
 #ifdef CACHE_ALLOC
   *pt_calib_data_d = (calib_data_t *)cudautils::allocate_device(dev, sizeof(calib_data_t), stream);
   calib_data_d->noise = (float *)cudautils::allocate_device(dev, 2*max_strips*sizeof(float), stream);
-  calib_data_d->bad = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream)
+  calib_data_d->bad = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream);
 #else
   cudaMalloc((void **)pt_calib_data_d, sizeof(calib_data_t));
   cudaMalloc((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float));
@@ -352,8 +353,8 @@ extern "C"
 
 #ifdef CACHE_ALLOC
   *pt_clust_data_d = (clust_data_t *)cudautils::allocate_device(dev, sizeof(clust_data_t), stream);
-  clust_data_d->clusterLastIndexLeft = (int *)cudautils::allocate_device(dev, 2*max_stirps*sizeof(int), stream);
-  clust_data_d->clustADCs = (uint8_t *)cudautils::allocate_device(dev, max_strips*256*sizeof(uint8_t), stream);
+  clust_data_d->clusterLastIndexLeft = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
+  clust_data_d->clusterADCs = (uint8_t *)cudautils::allocate_device(dev, max_strips*256*sizeof(uint8_t), stream);
   clust_data_d->trueCluster = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream);
 #else
   cudaMalloc((void **)pt_clust_data_d, sizeof(clust_data_t));
@@ -412,8 +413,8 @@ extern "C"
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_clust_data_d);
   cudautils::free_device(dev, clust_data_d->clusterLastIndexLeft);
-  cudautils::free_device(dev, clusterADCs);
-  cudautils::free_device(dev, trueCluster);
+  cudautils::free_device(dev, clust_data_d->clusterADCs);
+  cudautils::free_device(dev, clust_data_d->trueCluster);
 #else
   cudaFree(pt_clust_data_d);
   cudaFree(clust_data_d->clusterLastIndexLeft);
