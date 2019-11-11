@@ -30,17 +30,17 @@ endif
 
 ifeq ($(COMPILER), intel)
 	CC = icpc
-	CXXFLAGS += -std=c++14 -O3 -qopenmp -qopt-report=5 -xHost \
+	CXXFLAGS += -std=c++17 -O3 -qopenmp -qopt-report=5 -xHost \
 	 -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
 	 -qopt-zmm-usage=high #-DOUTPUT #-DUSE_GPU
-	LDFLAGS += -std=c++14 -O3 -fopenmp -xHost -qopt-zmm-usage=high
+	LDFLAGS += -std=c++17 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 endif
 
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
  -gencode=arch=compute_60,code=\"sm_60,compute_60\"  \
- -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} -DCUB_STDERR \
- -DCACHE_ALLOC #-DGPU_TIMER -DCACHE_ALLOC #-DUSE_TEXTURE -DGPU_DEBUG
+ -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
+ -DCACHE_ALLOC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
 # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L${CUDALIBDIR} \
 -L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src

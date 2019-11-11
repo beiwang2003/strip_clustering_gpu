@@ -325,7 +325,7 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
 extern "C"
 void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing, int dev, cudaStream_t stream) {
 #ifdef GPU_TIMER
-  gpu_timer_start(gpu_timing, 0);
+  gpu_timer_start(gpu_timing, stream);
 #endif
 
 #ifdef CACHE_ALLOC
@@ -341,14 +341,14 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
   cudaMemcpy((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice);
 
 #ifdef GPU_TIMER
-  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
+  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
 extern "C"
   void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
 #ifdef GPU_TIMER
-  gpu_timer_start(gpu_timing, 0);
+  gpu_timer_start(gpu_timing, stream);
 #endif
 
 #ifdef CACHE_ALLOC
@@ -366,12 +366,16 @@ extern "C"
   cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice);
 
 #ifdef GPU_TIMER
-  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, 0);
+  gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
 extern "C"
-  void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, int dev) {
+void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
+
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_sst_data_d);
   cudautils::free_device(dev, sst_data_d->detId);
@@ -389,10 +393,17 @@ extern "C"
   cudaUnbindTexture(stripIdTexRef);
   cudaUnbindTexture(adcTexRef);
 #endif
+#ifdef GPU_TIMER
+  gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
+#endif
 }
 
 extern "C"
-void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, int dev) {
+void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
+
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_calib_data_d);
   cudautils::free_device(dev, calib_data_d->noise);
@@ -406,10 +417,16 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d,
   cudaUnbindTexture(noiseTexRef);
   cudaUnbindTexture(gainTexRef);
 #endif
+#ifdef GPU_TIMER
+  gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
+#endif
 }
 
 extern "C"
-  void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, int dev) {
+void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_clust_data_d);
   cudautils::free_device(dev, clust_data_d->clusterLastIndexLeft);
@@ -420,6 +437,9 @@ extern "C"
   cudaFree(clust_data_d->clusterLastIndexLeft);
   cudaFree(clust_data_d->clusterADCs);
   cudaFree(clust_data_d->trueCluster);
+#endif
+#ifdef GPU_TIMER
+  gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
