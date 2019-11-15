@@ -15,7 +15,7 @@ int main()
   const int max_strips = 600000;
   const int max_seedstrips = 150000;
   const int nIter = 100;
-  const int nStreams = 10;
+  const int nStreams = 8;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
   clust_data_t *clust_data[nStreams];
@@ -86,10 +86,11 @@ int main()
   double t0 = omp_get_wtime();
 
 #if USE_GPU
+    allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
+    cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
+
     for (int iter=0; iter<nIter; iter++) {
-      allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
-      cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
-#pragma omp parallel for num_threads(5)
+#pragma omp parallel for num_threads(nStreams)
       for (int i=0; i<nStreams; i++) {
 
 	allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
@@ -112,16 +113,13 @@ int main()
     }
 #else
   omp_set_nested(true);
-#pragma omp parallel
-  {
-    for (int iter=0; iter<nIter; iter++) {
-#pragma omp for
-      for (int i=0; i<nStreams; i++) {
+  for (int iter=0; iter<nIter; iter++) {
+#pragma omp parallel for num_threads(nStreams)
+    for (int i=0; i<nStreams; i++) {
 
-	setSeedStripsNCIndex(sst_data[i], calib_data, cpu_timing[i]);
+      setSeedStripsNCIndex(sst_data[i], calib_data, cpu_timing[i]);
 
-	findCluster(sst_data[i], calib_data, clust_data[i], cpu_timing[i]);
-      }
+      findCluster(sst_data[i], calib_data, clust_data[i], cpu_timing[i]);
     }
   }
 #endif
