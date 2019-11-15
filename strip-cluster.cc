@@ -109,8 +109,9 @@ int main()
 
 	freeClustDataGPU(clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], gpu_device, stream[i]);
       }
-      freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
     }
+
+    freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
 #else
   omp_set_nested(true);
   for (int iter=0; iter<nIter; iter++) {
