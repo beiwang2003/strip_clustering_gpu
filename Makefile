@@ -9,6 +9,7 @@ ifneq (,$(findstring tigergpu, $(SYSTEMS)))
 	CUBROOT=/home/beiwang/clustering/cub-1.8.0
 #git clone https://github.com/cms-externals/cuda-api-wrappers.git
 	CUDA_API_PATH=/home/beiwang/clustering/cuda-api-wrappers/src
+	GPUARCH=sm_60
 endif 
 
 #lnx7188 at cornell
@@ -16,6 +17,7 @@ ifneq (,$(findstring lnx7188, $(SYSTEMS)))
 	CMSSW_CUDAUTILS_PATH=../cmssw
 	CUBROOT=../cub-1.8.0
 	CUDA_API_PATH=../cuda-api-wrappers/src
+	GPUARCH=sm_70
 endif
 
 EXTERNAL_SOURCE = ${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
@@ -38,12 +40,11 @@ endif
 
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
- -gencode=arch=compute_60,code=\"sm_60,compute_60\"  \
- -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
- -DCACHE_ALLOC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
-# Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
+ -arch=${GPUARCH} -I${CUBROOT} -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
+ -DCACHE_ALLOC -DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
+ # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L${CUDALIBDIR} \
--L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
+ -L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o allocate_host.o allocate_device.o
 	$(CC) $(LDFLAGS) $(CUDALDFLAGS) -o strip-cluster strip-cluster.o cluster.o \
