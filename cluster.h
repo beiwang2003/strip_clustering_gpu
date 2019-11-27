@@ -43,9 +43,11 @@ typedef struct {
   float checkClusterTime;
 } cpu_timing_t;
 
+void print_binding_info();
+
 void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream);
 void allocateCalibData(int max_strips, calib_data_t *calib_data);
-void allocateClustData(int max_strips, clust_data_t *clust_data, cudaStream_t stream);
+void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_t stream);
 
 void freeSSTData(sst_data_t *sst_data);
 void freeCalibData(calib_data_t *calib_data_t);

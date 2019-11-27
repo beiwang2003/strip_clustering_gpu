@@ -29,12 +29,25 @@ int main()
   calib_data_t *calib_data = (calib_data_t *)malloc(sizeof(calib_data_t));
 
   // memory allocation
+#ifdef NUMA_FT
+#pragma omp parallel for num_threads(nStreams)
+#endif
   for (int i=0; i<nStreams; i++) {
+    //    print_binding_info();
     allocateSSTData(max_strips, sst_data[i], stream[i]);
     allocateClustData(max_seedstrips, clust_data[i], stream[i]);
   }
-  allocateCalibData(max_strips, calib_data);
-
+#ifdef NUMA_FT
+#pragma omp parallel num_threads(nStreams)
+  {
+#pragma omp single
+    {
+#endif
+      allocateCalibData(max_strips, calib_data);
+#ifdef NUMA_FT
+    }
+  }
+#endif
   // read in the data
   std::ifstream digidata_in("digidata.bin", std::ofstream::in | std::ios::binary);
   int i=0;
@@ -113,7 +126,6 @@ int main()
 
     freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
 #else
-  omp_set_nested(true);
   for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
@@ -177,13 +189,10 @@ int main()
 
 #ifdef USE_GPU
   for (int i=0; i<nStreams; i++) {
-    //freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i], gpu_device);
-    //freeClustDataGPU(clust_data_d[i], pt_clust_data_d[i], gpu_device);
     free(sst_data_d[i]);
     free(clust_data_d[i]);
     free(gpu_timing[i]);
   }
-  //freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_device);
   free(calib_data_d);
 #endif
 

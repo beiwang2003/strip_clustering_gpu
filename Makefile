@@ -26,7 +26,7 @@ ifeq ($(COMPILER), gnu)
 	CC = g++
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -fopt-info-vec -march=native \
 	-I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
-	-mprefer-vector-width=512 -DUSE_GPU -DCACHE_ALLOC #-DOUTPUT #-DCPU_DEBUG
+	-mprefer-vector-width=512 -DNUMA_FT -DUSE_GPU -DCACHE_ALLOC #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native -mprefer-vector-width=512
 endif
 
@@ -34,7 +34,7 @@ ifeq ($(COMPILER), intel)
 	CC = icpc
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -qopt-report=5 -xHost \
 	 -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
-	 -qopt-zmm-usage=high #-DOUTPUT #-DUSE_GPU
+	 -qopt-zmm-usage=high -DNUMA_FT #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 endif
 
@@ -45,6 +45,10 @@ CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v \
  # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L${CUDALIBDIR} \
  -L${CMSSW_CUDAUTILS_PATH}/HeterogeneousCore/CUDAUtilities/src
+
+ifeq ($(COMPILER), intel)
+        CUDAFLAGS += -ccbin=icpc #specify intel for nvcc host compiler 
+endif
 
 strip-cluster : strip-cluster.o cluster.o clusterGPU.o allocate_host.o allocate_device.o
 	$(CC) $(LDFLAGS) $(CUDALDFLAGS) -o strip-cluster strip-cluster.o cluster.o \

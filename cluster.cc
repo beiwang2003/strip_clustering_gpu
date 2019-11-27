@@ -9,6 +9,21 @@
 #endif
 #endif
 
+#if _OPENMP
+void print_binding_info() {
+  int my_place = omp_get_place_num();
+  int place_num_procs = omp_get_place_num_procs(my_place);
+  printf("Place consists of %d processors: ", place_num_procs);
+  int *place_processors = (int *)malloc(sizeof(int) * place_num_procs);
+  omp_get_place_proc_ids(my_place, place_processors);
+  for (int i = 0; i < place_num_procs - 1; i++) {
+    printf("%d ", place_processors[i]);
+  }
+  printf("\n");
+  free(place_processors);
+}
+#endif
+
 void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
 #ifdef USE_GPU
 #ifdef CACHE_ALLOC
@@ -22,56 +37,79 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
 #else
   cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault);
   cudaHostAlloc((void **)&(sst_data->stripId), 2*max_strips*sizeof(uint16_t), cudaHostAllocDefault);
-  //cudaHostAlloc((void **)&(sst_data->adc), max_strips*sizeof(uint16_t), cudaHostAllocDefault);
   sst_data->adc = sst_data->stripId + max_strips;
   cudaHostAlloc((void **)&(sst_data->seedStripsMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
-  //cudaHostAlloc((void **)&(sst_data->seedStripsNCMask), max_strips*sizeof(int), cudaHostAllocDefault);
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
   cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
-  //cudaHostAlloc((void **)&(sst_data->seedStripsNCIndex), max_strips*sizeof(int), cudaHostAllocDefault);
   sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
 #endif
 #else
   sst_data->detId = (detId_t *)_mm_malloc(max_strips*sizeof(detId_t), IDEAL_ALIGNMENT);
   sst_data->stripId = (uint16_t *)_mm_malloc(2*max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
-  //sst_data->adc = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
   sst_data->adc = sst_data->stripId + max_strips;
   sst_data->seedStripsMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  //sst_data->seedStripsNCMask = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
   sst_data->prefixSeedStripsNCMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  //sst_data->seedStripsNCIndex = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
   sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
+#ifdef NUMA_FT
+#pragma omp parallel for
+  for (int i=0; i<max_strips; i++) {
+
+    sst_data->detId[i] = 0;
+    sst_data->stripId[i] = 0;
+    sst_data->adc[i] = 0;
+    sst_data->seedStripsMask[i] = 0;
+    sst_data->seedStripsNCMask[i] = 0;
+    sst_data->prefixSeedStripsNCMask[i] = 0;
+    sst_data->seedStripsNCIndex[i] = 0;
+  }
+#endif
 #endif
 }
 
 void allocateCalibData(int max_strips, calib_data_t *calib_data){
   calib_data->noise = (float *)_mm_malloc(2*max_strips*sizeof(float), IDEAL_ALIGNMENT);
-  //calib_data->gain = (float *)_mm_malloc(max_strips*sizeof(float), IDEAL_ALIGNMENT);
   calib_data->gain = calib_data->noise + max_strips;
   calib_data->bad = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
+#ifdef NUMA_FT
+#pragma omp parallel for
+  for (int i=0; i<max_strips; i++) {
+    calib_data->noise[i] = 0.0;
+    calib_data->gain[i] = 0.0;
+    calib_data->bad[i] = false;
+  }
+#endif
 }
 
-void allocateClustData(int max_strips, clust_data_t *clust_data, cudaStream_t stream){
+void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_t stream){
 #ifdef USE_GPU
 #ifdef CACHE_ALLOC
-  clust_data->clusterLastIndexLeft = (int *)cudautils::allocate_host(2*max_strips*sizeof(int), stream);
-  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_strips;
-  clust_data->clusterADCs = (uint8_t*)cudautils::allocate_host(max_strips*256*sizeof(uint8_t), stream);
-  clust_data->trueCluster = (bool *)cudautils::allocate_host(max_strips*sizeof(bool), stream);
+  clust_data->clusterLastIndexLeft = (int *)cudautils::allocate_host(2*max_seedstrips*sizeof(int), stream);
+  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
+  clust_data->clusterADCs = (uint8_t*)cudautils::allocate_host(max_seedstrips*256*sizeof(uint8_t), stream);
+  clust_data->trueCluster = (bool *)cudautils::allocate_host(max_seedstrips*sizeof(bool), stream);
 #else
-  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*max_strips*sizeof(int), cudaHostAllocDefault);
-  //cudaHostAlloc((void **)&(clust_data->clusterLastIndexRight), max_strips*sizeof(int), cudaHostAllocDefault);
-  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_strips;
-  cudaHostAlloc((void **)&(clust_data->clusterADCs), max_strips*256*sizeof(uint8_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(clust_data->trueCluster), max_strips*sizeof(bool), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*seedmax_strips*sizeof(int), cudaHostAllocDefault);
+  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
+  cudaHostAlloc((void **)&(clust_data->clusterADCs), max_seedstrips*256*sizeof(uint8_t), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->trueCluster), max_seedstrips*sizeof(bool), cudaHostAllocDefault);
 #endif
 #else
-  clust_data->clusterLastIndexLeft = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  //clust_data->clusterLastIndexRight = (int *)_mm_malloc(max_strips*sizeof(int), IDEAL_ALIGNMENT);
-  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_strips;
-  clust_data->clusterADCs = (uint8_t *)_mm_malloc(max_strips*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
-  clust_data->trueCluster = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
+  clust_data->clusterLastIndexLeft = (int *)_mm_malloc(2*max_seedstrips*sizeof(int), IDEAL_ALIGNMENT);
+  clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
+  clust_data->clusterADCs = (uint8_t *)_mm_malloc(max_seedstrips*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
+  clust_data->trueCluster = (bool *)_mm_malloc(max_seedstrips*sizeof(bool), IDEAL_ALIGNMENT);
+#ifdef NUMA_FT
+#pragma omp parallel for
+  for (int i=0; i<max_seedstrips; i++) {
+    clust_data->clusterLastIndexLeft[i] = 0;
+    clust_data->clusterLastIndexRight[i] = 0;
+    for (int j=0; j<256; j++) {
+      clust_data->clusterADCs[i*256+j] = 0;
+    }
+    clust_data->trueCluster[i] = false;
+  }
+#endif
 #endif
 }
 
@@ -85,26 +123,19 @@ void freeSSTData(sst_data_t *sst_data) {
 #else
   cudaFreeHost(sst_data->detId);
   cudaFreeHost(sst_data->stripId);
-  //cudaFreeHost(sst_data->adc);
   cudaFreeHost(sst_data->seedStripsMask);
-  //cudaFreeHost(sst_data->seedStripsNCMask);
   cudaFreeHost(sst_data->prefixSeedStripsNCMask);
-  //cudaFreeHost(sst_data->seedStripsNCIndex);
 #endif
 #else
   free(sst_data->detId);
   free(sst_data->stripId);
-  //free(sst_data->adc);
   free(sst_data->seedStripsMask);
-  //free(sst_data->seedStripsNCMask);
   free(sst_data->prefixSeedStripsNCMask);
-  //free(sst_data->seedStripsNCIndex);
 #endif
 }
 
 void freeCalibData(calib_data_t *calib_data) {
   free(calib_data->noise);
-  //free(calib_data->gain);
   free(calib_data->bad);
 }
 
@@ -116,13 +147,11 @@ void freeClustData(clust_data_t *clust_data) {
   cudautils::free_host(clust_data->trueCluster);
 #else
   cudaFreeHost(clust_data->clusterLastIndexLeft);
-  //cudaFreeHost(clust_data->clusterLastIndexRight);
   cudaFreeHost(clust_data->clusterADCs);
   cudaFreeHost(clust_data->trueCluster);
 #endif
 #else
   free(clust_data->clusterLastIndexLeft);
-  //free(clust_data->clusterLastIndexRight);
   free(clust_data->clusterADCs);
   free(clust_data->trueCluster);
 #endif
@@ -147,8 +176,10 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
 
 #pragma omp parallel
   {
+#ifdef CPU_TIMER
 #pragma omp single
     t0 = omp_get_wtime();
+#endif
     // mark seed strips
 #pragma omp for simd aligned(noise,seedStripsMask,seedStripsNCMask,prefixSeedStripsNCMask: CACHELINE_BYTES)
     for (int i=0; i<nStrips; i++) {
@@ -163,12 +194,13 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
     for (int i=nStrips; i<nStripsP2; i++) {
       prefixSeedStripsNCMask[i] = 0;
     }
-
+#ifdef CPU_TIMER
 #pragma omp single
     {
       t1 = omp_get_wtime();
       cpu_timing->setSeedStripsTime = t1 - t0;
     }
+#endif
 
     // mark only non-consecutive seed strips (mask out consecutive seed strips)
 #pragma omp for simd aligned(seedStripsNCMask,prefixSeedStripsNCMask: CACHELINE_BYTES)
@@ -178,12 +210,13 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
       prefixSeedStripsNCMask[i] = mask;
       seedStripsNCMask[i] = mask;
     }
-
+#ifdef CPU_TIMER
 #pragma omp single
     {
       t0 = omp_get_wtime();
       cpu_timing->setNCSeedStripsTime = t0 - t1;
     }
+#endif
 
     // set index for non-consecutive seed strips
     // parallel prefix sum implementation
@@ -198,11 +231,13 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
     }
 
     // The down-sweep phase of a work-efficient sum scan algorithm
+
 #pragma omp single
     {
       sst_data->nSeedStripsNC = prefixSeedStripsNCMask[nStripsP2-1];
       prefixSeedStripsNCMask[nStripsP2-1] = 0;
     }
+
     for (int d=depth-1; d>=0; d--) {
       int stride = std::pow(2, d);
       int stride2 = 2*stride;
@@ -221,9 +256,10 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, cpu_ti
 	seedStripsNCIndex[index] = i;
       }
     }
-
+#ifdef CPU_TIMER
 #pragma omp single
     cpu_timing->setStripIndexTime = omp_get_wtime() - t0;
+#endif
   }
 
 #ifdef CPU_DEBUG
