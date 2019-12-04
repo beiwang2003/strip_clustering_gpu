@@ -33,6 +33,7 @@ typedef struct {
   int *clusterLastIndexLeft, *clusterLastIndexRight;
   uint8_t *clusterADCs;
   bool *trueCluster;
+  float *barycenter;
 } clust_data_t;
 
 typedef struct {

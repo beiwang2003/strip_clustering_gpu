@@ -242,7 +242,9 @@ static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib
    const int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight;
    uint8_t *__restrict__ clusterADCs = clust_data_d->clusterADCs;
    bool *__restrict__ trueCluster = clust_data_d->trueCluster;
+   float *__restrict__ barycenter = clust_data_d->barycenter;
    const float minGoodCharge = 1620.0;
+   const uint16_t stripIndexMask = 0x7FFF;
 
    const int tid = threadIdx.x;
    const int bid = blockIdx.x;
@@ -255,6 +257,8 @@ static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib
    uint16_t adc_j;
    float gain_j;
    float adcSum=0.0f;
+   int sumx=0;
+   int suma=0;
 
    if (i<nSeedStripsNC) {
      if (trueCluster[i]) {
@@ -272,9 +276,11 @@ static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib
 	   if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
 	   clusterADCs[j*nSeedStripsNC+i] = adc_j;
 	   adcSum += static_cast<float>(adc_j);
+	   sumx += j*adc_j;
+	   suma += adc_j;
          }
+	 barycenter[i] = static_cast<float>(stripId[left] & stripIndexMask) + static_cast<float>(sumx)/static_cast<float>(suma) + 0.5f;
        }
-
        trueCluster[i] = (adcSum/0.047f) > minGoodCharge;
      }
    }
@@ -356,11 +362,13 @@ extern "C"
   clust_data_d->clusterLastIndexLeft = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
   clust_data_d->clusterADCs = (uint8_t *)cudautils::allocate_device(dev, max_strips*256*sizeof(uint8_t), stream);
   clust_data_d->trueCluster = (bool *)cudautils::allocate_device(dev, max_strips*sizeof(bool), stream);
+  clust_data_d->barycenter = (float *)cudautils::allocate_device(dev, max_strips*sizeof(float), stream);
 #else
   cudaMalloc((void **)pt_clust_data_d, sizeof(clust_data_t));
   cudaMalloc((void **)&(clust_data_d->clusterLastIndexLeft), 2*max_strips*sizeof(int));
   cudaMalloc((void **)&(clust_data_d->clusterADCs), max_strips*256*sizeof(uint8_t));
   cudaMalloc((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool));
+  cudaMalloc((void **)&(clust_data_d->barycenter), max_strips*sizeof(float));
 #endif
   clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
   cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice);
@@ -432,11 +440,13 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d,
   cudautils::free_device(dev, clust_data_d->clusterLastIndexLeft);
   cudautils::free_device(dev, clust_data_d->clusterADCs);
   cudautils::free_device(dev, clust_data_d->trueCluster);
+  cudautils::free_device(dev, clust_data_d->barycenter);
 #else
   cudaFree(pt_clust_data_d);
   cudaFree(clust_data_d->clusterLastIndexLeft);
   cudaFree(clust_data_d->clusterADCs);
   cudaFree(clust_data_d->trueCluster);
+  cudaFree(clust_data_d->barycenter);
 #endif
 #ifdef GPU_TIMER
   gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
@@ -608,8 +618,11 @@ void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_
 #endif
   cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft), clust_data_d->clusterLastIndexLeft, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
   cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight), clust_data_d->clusterLastIndexRight, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream);
+#ifdef COPY_ADC
   cudaMemcpyAsync((void *)(clust_data->clusterADCs), clust_data_d->clusterADCs, nSeedStripsNC*256*sizeof(uint8_t), cudaMemcpyDeviceToHost, stream);
+#endif
   cudaMemcpyAsync((void *)(clust_data->trueCluster), clust_data_d->trueCluster, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync((void *)(clust_data->barycenter), clust_data_d->barycenter, nSeedStripsNC*sizeof(float), cudaMemcpyDeviceToHost, stream);
   cudaStreamSynchronize(stream);
   cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost);
 #ifdef GPU_TIMER

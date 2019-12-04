@@ -153,7 +153,8 @@ int main()
     for (int j=0; j<sst_data[i]->nSeedStripsNC; j++) {
       if (clust_data[i]->trueCluster[j]){
 	int index = clust_data[i]->clusterLastIndexLeft[j];
-	std::cout<<" det id "<<sst_data[i]->detId[index]<<" strip "<<sst_data[i]->stripId[index]<< ": ";
+	std::cout<<" det id "<<sst_data[i]->detId[index]<<" strip "<<sst_data[i]->stripId[index]
+		 <<" bary center "<<clust_data[i]->barycenter[j]<<": ";
 	int right=clust_data[i]->clusterLastIndexRight[j];
 	int size=right-index+1;
 	for (int k=0; k<size; k++){

@@ -88,17 +88,20 @@ void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_
   clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
   clust_data->clusterADCs = (uint8_t*)cudautils::allocate_host(max_seedstrips*256*sizeof(uint8_t), stream);
   clust_data->trueCluster = (bool *)cudautils::allocate_host(max_seedstrips*sizeof(bool), stream);
+  clust_data->barycenter = (float *)cudautils::allocate_host(max_seedstrips*sizeof(float), stream);
 #else
   cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*seedmax_strips*sizeof(int), cudaHostAllocDefault);
   clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
   cudaHostAlloc((void **)&(clust_data->clusterADCs), max_seedstrips*256*sizeof(uint8_t), cudaHostAllocDefault);
   cudaHostAlloc((void **)&(clust_data->trueCluster), max_seedstrips*sizeof(bool), cudaHostAllocDefault);
+  cudaHostAlloc((void **)&(clust_data->barycenter), max_seedstrips*sizeof(float), cudaHostAllocDefault);
 #endif
 #else
   clust_data->clusterLastIndexLeft = (int *)_mm_malloc(2*max_seedstrips*sizeof(int), IDEAL_ALIGNMENT);
   clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
   clust_data->clusterADCs = (uint8_t *)_mm_malloc(max_seedstrips*256*sizeof(uint8_t), IDEAL_ALIGNMENT);
   clust_data->trueCluster = (bool *)_mm_malloc(max_seedstrips*sizeof(bool), IDEAL_ALIGNMENT);
+  clust_data->barycenter = (float *)_mm_malloc(max_seedstrips*sizeof(float), IDEAL_ALIGNMENT);
 #ifdef NUMA_FT
 #pragma omp parallel for
   for (int i=0; i<max_seedstrips; i++) {
@@ -108,6 +111,7 @@ void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_
       clust_data->clusterADCs[i*256+j] = 0;
     }
     clust_data->trueCluster[i] = false;
+    clust_data->barycenter[i] = 0.0;
   }
 #endif
 #endif
@@ -145,15 +149,18 @@ void freeClustData(clust_data_t *clust_data) {
   cudautils::free_host(clust_data->clusterLastIndexLeft);
   cudautils::free_host(clust_data->clusterADCs);
   cudautils::free_host(clust_data->trueCluster);
+  cudautils::free_host(clust_data->barycenter);
 #else
   cudaFreeHost(clust_data->clusterLastIndexLeft);
   cudaFreeHost(clust_data->clusterADCs);
   cudaFreeHost(clust_data->trueCluster);
+  cudaFreeHost(clust_data->barycenter);
 #endif
 #else
   free(clust_data->clusterLastIndexLeft);
   free(clust_data->clusterADCs);
   free(clust_data->trueCluster);
+  free(clust_data->barycenter);
 #endif
 }
 
@@ -351,12 +358,15 @@ static void findLeftRightBoundary(sst_data_t *sst_data, calib_data_t *calib_data
 static void checkClusterCondition(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data) {
   const int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft;
   const int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight;
+  const uint16_t *__restrict__ stripId = sst_data->stripId;
   const uint16_t *__restrict__ adc = sst_data->adc;
   const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ gain = calib_data->gain;
   bool *__restrict__ trueCluster = clust_data->trueCluster;
   uint8_t *__restrict__ clusterADCs = clust_data->clusterADCs;
+  float *__restrict__ barycenter = clust_data->barycenter;
   const float minGoodCharge = 1620.0;
+  const uint16_t stripIndexMask = 0x7FFF;
 
 #pragma omp parallel for
   for (int i=0; i<nSeedStripsNC; i++){
@@ -366,6 +376,8 @@ static void checkClusterCondition(sst_data_t *sst_data, calib_data_t *calib_data
       int right=clusterLastIndexRight[i];
       int size=right-left+1;
       float adcSum=0.0f;
+      int sumx=0;
+      int suma=0;
 
       if (i>0&&clusterLastIndexLeft[i-1]==left) {
         trueCluster[i] = 0;  // ignore duplicates
@@ -377,12 +389,14 @@ static void checkClusterCondition(sst_data_t *sst_data, calib_data_t *calib_data
           if (adc_j < 254) adc_j = ( charge > 1022 ? 255 : (charge > 253 ? 254 : charge));
           clusterADCs[j*nSeedStripsNC+i] = adc_j;
           adcSum += static_cast<float>(adc_j);
+	  sumx += j*adc_j;
+	  suma += adc_j;
         }
+	barycenter[i] = static_cast<float>(stripId[left] & stripIndexMask) + static_cast<float>(sumx)/static_cast<float>(suma) + 0.5f;
       }
       trueCluster[i] = adcSum/0.047f > minGoodCharge;
     }
   }
-
 }
 
 void findCluster(sst_data_t *sst_data, calib_data_t *calib_data, clust_data_t *clust_data, cpu_timing_t *cpu_timing){
