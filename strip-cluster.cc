@@ -5,10 +5,8 @@
 #include <omp.h>
 #endif
 #include "cluster.h"
-#ifdef USE_GPU
 #include <cuda_runtime.h>
 #include "clusterGPU.cuh"
-#endif
 
 int main()
 {
