@@ -6,6 +6,17 @@
 #include <mm_malloc.h>
 #include "cluster.h"
 
+#define CUDA_RT_CALL(call)                                                                  \
+    {                                                                                       \
+     	cudaError_t cudaStatus = call;                                                      \
+        if (cudaSuccess != cudaStatus)                                                      \
+            fprintf(stderr,                                                                 \
+                    "ERROR: CUDA RT call \"%s\" in line %d of file %s failed "              \
+                    "with "                                                                 \
+                    "%s (%d).\n",                                                           \
+                    #call, __LINE__, __FILE__, cudaGetErrorString(cudaStatus), cudaStatus); \
+    }
+
 #ifdef __cplusplus
    extern "C" {
 #endif

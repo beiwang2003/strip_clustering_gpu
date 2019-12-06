@@ -21,7 +21,7 @@ int main()
   clust_data_t *clust_data[nStreams];
   cpu_timing_t *cpu_timing[nStreams];
   for (int i=0; i<nStreams; i++) {
-    cudaStreamCreate(&stream[i]);
+    CUDA_RT_CALL(cudaStreamCreate(&stream[i]));
     sst_data[i] = (sst_data_t *)malloc(sizeof(sst_data_t));
     clust_data[i] = (clust_data_t *)malloc(sizeof(clust_data_t));
     cpu_timing[i] = (cpu_timing_t *)malloc(sizeof(cpu_timing_t));
@@ -92,8 +92,8 @@ int main()
     gpu_timing[i]->memFreeTime = 0.0;
   }
   int gpu_device = 0;
-  cudaSetDevice(gpu_device);
-  cudaGetDevice(&gpu_device);
+  CUDA_RT_CALL(cudaSetDevice(gpu_device));
+  CUDA_RT_CALL(cudaGetDevice(&gpu_device));
 #endif
 
   double t0 = omp_get_wtime();
@@ -142,7 +142,7 @@ int main()
 
 #ifdef OUTPUT
 #ifdef USE_GPU
-  cudaDeviceSynchronize();
+  CUDA_RT_CALL(cudaDeviceSynchronize());
 #endif
   // print out the result
   for (i=0; i<nStreams; i++) {
@@ -203,7 +203,7 @@ int main()
     freeClustData(clust_data[i]);
     free(clust_data[i]);
     free(cpu_timing[i]);
-    cudaStreamDestroy(stream[i]);
+    CUDA_RT_CALL(cudaStreamDestroy(stream[i]));
   }
   freeCalibData(calib_data);
   free(calib_data);

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cuda_runtime_api.h>
 #ifdef USE_GPU
+#include "clusterGPU.cuh"
 #ifdef CACHE_ALLOC
 #include <HeterogeneousCore/CUDAUtilities/interface/allocate_host.h>
 #endif
@@ -35,12 +36,12 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
   sst_data->prefixSeedStripsNCMask = (int *)cudautils::allocate_host(2*max_strips*sizeof(int), stream);
   sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
 #else
-  cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(sst_data->stripId), 2*max_strips*sizeof(uint16_t), cudaHostAllocDefault);
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault));
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->stripId), 2*max_strips*sizeof(uint16_t), cudaHostAllocDefault));
   sst_data->adc = sst_data->stripId + max_strips;
-  cudaHostAlloc((void **)&(sst_data->seedStripsMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->seedStripsMask), 2*max_strips*sizeof(int), cudaHostAllocDefault));
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
-  cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), 2*max_strips*sizeof(int), cudaHostAllocDefault);
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), 2*max_strips*sizeof(int), cudaHostAllocDefault));
   sst_data->seedStripsNCIndex = sst_data->prefixSeedStripsNCMask + max_strips;
 #endif
 #else
@@ -90,11 +91,11 @@ void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_
   clust_data->trueCluster = (bool *)cudautils::allocate_host(max_seedstrips*sizeof(bool), stream);
   clust_data->barycenter = (float *)cudautils::allocate_host(max_seedstrips*sizeof(float), stream);
 #else
-  cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*seedmax_strips*sizeof(int), cudaHostAllocDefault);
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*seedmax_strips*sizeof(int), cudaHostAllocDefault));
   clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
-  cudaHostAlloc((void **)&(clust_data->clusterADCs), max_seedstrips*256*sizeof(uint8_t), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(clust_data->trueCluster), max_seedstrips*sizeof(bool), cudaHostAllocDefault);
-  cudaHostAlloc((void **)&(clust_data->barycenter), max_seedstrips*sizeof(float), cudaHostAllocDefault);
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->clusterADCs), max_seedstrips*256*sizeof(uint8_t), cudaHostAllocDefault));
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->trueCluster), max_seedstrips*sizeof(bool), cudaHostAllocDefault));
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->barycenter), max_seedstrips*sizeof(float), cudaHostAllocDefault));
 #endif
 #else
   clust_data->clusterLastIndexLeft = (int *)_mm_malloc(2*max_seedstrips*sizeof(int), IDEAL_ALIGNMENT);
@@ -125,10 +126,10 @@ void freeSSTData(sst_data_t *sst_data) {
   cudautils::free_host(sst_data->seedStripsMask);
   cudautils::free_host(sst_data->prefixSeedStripsNCMask);
 #else
-  cudaFreeHost(sst_data->detId);
-  cudaFreeHost(sst_data->stripId);
-  cudaFreeHost(sst_data->seedStripsMask);
-  cudaFreeHost(sst_data->prefixSeedStripsNCMask);
+  CUDA_RT_CALL(cudaFreeHost(sst_data->detId));
+  CUDA_RT_CALL(cudaFreeHost(sst_data->stripId));
+  CUDA_RT_CALL(cudaFreeHost(sst_data->seedStripsMask));
+  CUDA_RT_CALL(cudaFreeHost(sst_data->prefixSeedStripsNCMask));
 #endif
 #else
   free(sst_data->detId);
@@ -151,10 +152,10 @@ void freeClustData(clust_data_t *clust_data) {
   cudautils::free_host(clust_data->trueCluster);
   cudautils::free_host(clust_data->barycenter);
 #else
-  cudaFreeHost(clust_data->clusterLastIndexLeft);
-  cudaFreeHost(clust_data->clusterADCs);
-  cudaFreeHost(clust_data->trueCluster);
-  cudaFreeHost(clust_data->barycenter);
+  CUDA_RT_CALL(cudaFreeHost(clust_data->clusterLastIndexLeft));
+  CUDA_RT_CALL(cudaFreeHost(clust_data->clusterADCs));
+  CUDA_RT_CALL(cudaFreeHost(clust_data->trueCluster));
+  CUDA_RT_CALL(cudaFreeHost(clust_data->barycenter));
 #endif
 #else
   free(clust_data->clusterLastIndexLeft);
