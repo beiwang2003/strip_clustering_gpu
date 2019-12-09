@@ -91,7 +91,7 @@ void allocateClustData(int max_seedstrips, clust_data_t *clust_data, cudaStream_
   clust_data->trueCluster = (bool *)cudautils::allocate_host(max_seedstrips*sizeof(bool), stream);
   clust_data->barycenter = (float *)cudautils::allocate_host(max_seedstrips*sizeof(float), stream);
 #else
-  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*seedmax_strips*sizeof(int), cudaHostAllocDefault));
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->clusterLastIndexLeft), 2*max_seedstrips*sizeof(int), cudaHostAllocDefault));
   clust_data->clusterLastIndexRight = clust_data->clusterLastIndexLeft + max_seedstrips;
   CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->clusterADCs), max_seedstrips*256*sizeof(uint8_t), cudaHostAllocDefault));
   CUDA_RT_CALL(cudaHostAlloc((void **)&(clust_data->trueCluster), max_seedstrips*sizeof(bool), cudaHostAllocDefault));
