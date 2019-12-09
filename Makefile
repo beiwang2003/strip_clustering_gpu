@@ -26,7 +26,7 @@ ifeq ($(COMPILER), gnu)
 	CC = g++
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -fopt-info-vec -march=native \
 	-I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
-	-DNUMA_FT -DUSE_GPU -DCACHE_ALLOC -DOUTPUT #-mprefer-vector-width=512 -DCPU_DEBUG
+	-DUSE_GPU -DCACHE_ALLOC #-mprefer-vector-width=512 -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native #-mprefer-vector-width=512
 endif
 
@@ -34,7 +34,7 @@ ifeq ($(COMPILER), intel)
 	CC = icpc
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -qopt-report=5 -xHost \
 	 -I${CUDA_PATH}/include -I${CMSSW_CUDAUTILS_PATH} -I${CUDA_API_PATH} \
-	 -DNUMA_FT #-qopt-zmm-usage=high -DNUMA_FT #-DOUTPUT -DCPU_DEBUG
+	 -DNUMA_FT #-qopt-zmm-usage=high -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 endif
 

@@ -96,7 +96,7 @@ int main()
 
   double t0 = omp_get_wtime();
 
-#if USE_GPU
+#ifdef USE_GPU
     allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
     cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
 
@@ -136,7 +136,6 @@ int main()
 #endif
 
   double t1 = omp_get_wtime();
-
 
 #ifdef OUTPUT
 #ifdef USE_GPU
