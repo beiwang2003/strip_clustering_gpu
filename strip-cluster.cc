@@ -98,7 +98,7 @@ int main()
 
 #ifdef USE_GPU
     allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
-    cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0]);
+    cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
 
     for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
@@ -116,9 +116,9 @@ int main()
 
 	cpyGPUToCPU(sst_data_d[i], pt_sst_data_d[i], clust_data[i], clust_data_d[i], gpu_timing[i], stream[i]);
 
-	freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
-
 	freeClustDataGPU(clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], gpu_device, stream[i]);
+
+	freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
       }
     }
 

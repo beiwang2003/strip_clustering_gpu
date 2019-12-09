@@ -317,7 +317,7 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
 #else
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes));
 #endif // end CACHE_ALLOC
-  CUDA_RT_CALL(cudaMemcpy((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice));
+  CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice, stream));
 
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
@@ -340,8 +340,7 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
   CUDA_RT_CALL(cudaMalloc((void **)&(calib_data_d->bad), max_strips*sizeof(bool)));
 #endif
   calib_data_d->gain = calib_data_d->noise + max_strips;
-  CUDA_RT_CALL(cudaMemcpy((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice));
-
+  CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice, stream));
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
@@ -367,7 +366,7 @@ extern "C"
   CUDA_RT_CALL(cudaMalloc((void **)&(clust_data_d->barycenter), max_strips*sizeof(float)));
 #endif
   clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
-  CUDA_RT_CALL(cudaMemcpy((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice));
+  CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice, stream));
 
 #ifdef GPU_TIMER
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
@@ -576,7 +575,7 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
   cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, sst_data_d->nStrips, stream);
 
   CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nSeedStripsNC), sst_data_d->prefixSeedStripsNCMask+sst_data_d->nStrips-1, sizeof(int), cudaMemcpyDeviceToDevice, stream));
-  //  cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream);
+  CUDA_RT_CALL(cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream));
 
   setStripIndexGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d);
   CUDA_RT_CALL(cudaGetLastError());
@@ -627,17 +626,18 @@ void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_
 #endif
   CUDA_RT_CALL(cudaMemcpyAsync((void *)(clust_data->trueCluster), clust_data_d->trueCluster, nSeedStripsNC*sizeof(bool), cudaMemcpyDeviceToHost, stream));
   CUDA_RT_CALL(cudaMemcpyAsync((void *)(clust_data->barycenter), clust_data_d->barycenter, nSeedStripsNC*sizeof(float), cudaMemcpyDeviceToHost, stream));
+  //CUDA_RT_CALL(cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream));
   CUDA_RT_CALL(cudaStreamSynchronize(stream));
-  CUDA_RT_CALL(cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost));
+  //CUDA_RT_CALL(cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost));
 #ifdef GPU_TIMER
   gpu_timing->memTransDHTime += gpu_timer_measure_end(gpu_timing, 0);
 #endif
 }
 
 extern "C"
-void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing) {
+void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream) {
 #ifdef GPU_TIMER
-  gpu_timer_start(gpu_timing, 0);
+  gpu_timer_start(gpu_timing, stream);
 #endif
   CUDA_RT_CALL(cudaMemcpy((void *)calib_data_d->noise, calib_data->noise, max_strips*sizeof(float), cudaMemcpyHostToDevice));
   CUDA_RT_CALL(cudaMemcpy((void *)calib_data_d->gain, calib_data->gain, max_strips*sizeof(float), cudaMemcpyHostToDevice));
@@ -646,7 +646,7 @@ void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *c
   cudaBindTexture(0, gainTexRef, (void *)calib_data_d->gain, max_strips*sizeof(float));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, 0);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
