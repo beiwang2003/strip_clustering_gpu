@@ -10,8 +10,8 @@
 
 int main()
 {
-  const int max_strips = 600000;
-  const int max_seedstrips = 150000;
+  const int max_strips = MAX_STRIPS;
+  const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
   const int nIter = 840/nStreams;
   cudaStream_t stream[nStreams];
