@@ -6,7 +6,7 @@
 #ifdef USE_GPU
 #include "clusterGPU.cuh"
 #ifdef CACHE_ALLOC
-#include <HeterogeneousCore/CUDAUtilities/interface/allocate_host.h>
+#include "allocate_host.h"
 #endif
 #endif
 

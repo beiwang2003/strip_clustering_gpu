@@ -3,7 +3,7 @@
 #include <cub/cub.cuh>
 #include <cub/util_allocator.cuh>
 #ifdef CACHE_ALLOC
-#include <HeterogeneousCore/CUDAUtilities/interface/allocate_device.h>
+#include "allocate_device.h"
 #endif
 
 #if USE_TEXTURE
