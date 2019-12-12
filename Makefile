@@ -5,15 +5,12 @@ COMPILER = gnu
 ifneq (,$(findstring tigergpu, $(SYSTEMS)))
 #git clone https://github.com/NVlabs/cub.git
 	CUBROOT=/home/beiwang/clustering/cub-1.8.0
-#git clone https://github.com/cms-externals/cuda-api-wrappers.git
-	CUDA_API_PATH=/home/beiwang/clustering/cuda-api-wrappers/src
 	GPUARCH=sm_60
 endif 
 
 #lnx7188 at cornell
 ifneq (,$(findstring lnx7188, $(SYSTEMS)))
 	CUBROOT=../cub-1.8.0
-	CUDA_API_PATH=../cuda-api-wrappers/src
 	GPUARCH=sm_70
 endif
 
@@ -27,14 +24,13 @@ ifneq (,$(CMSSW_BASE))
 	CUBROOT := $(shell cd $(CMSSW_BASE) && scram tool tag cub INCLUDE)
 	CUDA_PATH := $(shell cd $(CMSSW_BASE) && scram tool tag cuda CUDA_BASE)
 	CUDALIBDIR := $(shell cd $(CMSSW_BASE) && scram tool tag cuda LIBDIR)
-	CUDA_API_PATH := $(shell cd $(CMSSW_BASE) && scram tool tag cuda-api-wrappers CUDA_API_WRAPPERS_BASE)/src
 endif
 
 
 ifeq ($(COMPILER), gnu)
 	CC = g++
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -fopt-info-vec -march=native \
-	-I$(CUDA_PATH)/include -I$(CUDA_API_PATH) -I$(CUBROOT) \
+	-I$(CUDA_PATH)/include -I$(CUBROOT) \
 	-DUSE_GPU -DCACHE_ALLOC #-mprefer-vector-width=512 -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native #-mprefer-vector-width=512
 endif
@@ -42,14 +38,14 @@ endif
 ifeq ($(COMPILER), intel)
 	CC = icpc
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -qopt-report=5 -xHost \
-	 -I$(CUDA_PATH)/include -I$(CUDA_API_PATH) -I$(CUBROOT) \
+	 -I$(CUDA_PATH)/include -I$(CUBROOT) \
 	 -DNUMA_FT #-qopt-zmm-usage=high -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 endif
 
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread --ptxas-options=-v -lineinfo \
- -arch=$(GPUARCH) -I$(CUBROOT) -I$(CUDA_API_PATH) \
+ -arch=$(GPUARCH) -I$(CUBROOT) \
  -DCACHE_ALLOC #-DCOPY_ADC -DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
  # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L$(CUDALIBDIR)
