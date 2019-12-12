@@ -34,7 +34,7 @@ endif
 ifeq ($(COMPILER), gnu)
 	CC = g++
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -fopt-info-vec -march=native \
-	-I$(CUDA_PATH)/include -I$(CUDA_API_PATH) \
+	-I$(CUDA_PATH)/include -I$(CUDA_API_PATH) -I$(CUBROOT) \
 	-DUSE_GPU -DCACHE_ALLOC #-mprefer-vector-width=512 -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native #-mprefer-vector-width=512
 endif
@@ -42,7 +42,7 @@ endif
 ifeq ($(COMPILER), intel)
 	CC = icpc
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -qopt-report=5 -xHost \
-	 -I$(CUDA_PATH)/include -I$(CUDA_API_PATH) \
+	 -I$(CUDA_PATH)/include -I$(CUDA_API_PATH) -I$(CUBROOT) \
 	 -DNUMA_FT #-qopt-zmm-usage=high -DNUMA_FT -DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -xHost -qopt-zmm-usage=high
 endif
@@ -66,9 +66,9 @@ cluster.o: cluster.cc cluster.h
 clusterGPU.o: clusterGPU.cu 
 	$(NVCC) $(CUDAFLAGS) -o clusterGPU.o -c clusterGPU.cu
 allocate_host.o: allocate_host.cc
-	$(NVCC) $(CUDAFLAGS) -o allocate_host.o -c allocate_host.cc
+	$(CC) $(CXXFLAGS) -o allocate_host.o -c allocate_host.cc
 allocate_device.o: allocate_device.cc
-	$(NVCC) $(CUDAFLAGS) -o allocate_device.o -c allocate_device.cc
+	$(CC) $(CXXFLAGS) -o allocate_device.o -c allocate_device.cc
 strip-cluster.o: strip-cluster.cc cluster.h
 	$(CC) $(CXXFLAGS) -o strip-cluster.o -c strip-cluster.cc
 
