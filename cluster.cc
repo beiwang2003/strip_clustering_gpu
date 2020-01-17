@@ -32,8 +32,8 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
   sst_data->detId = (detId_t *)cudautils::allocate_host(max_strips*sizeof(detId_t), stream);
   sst_data->fedId = (fedId_t *)cudautils::allocate_host(max_strips*sizeof(fedId_t), stream);
   sst_data->fedCh = (fedCh_t *)cudautils::allocate_host(max_strips*sizeof(fedCh_t), stream);
-  sst_data->stripId = (uint16_t*)cudautils::allocate_host(2*max_strips*sizeof(uint16_t), stream);
-  sst_data->adc = sst_data->stripId + max_strips;
+  sst_data->stripId = (uint16_t*)cudautils::allocate_host(max_strips*sizeof(uint16_t), stream);
+  sst_data->adc = (uint8_t*)cudautils::allocate_host(max_strips*sizeof(uint8_t), stream);
   sst_data->seedStripsMask = (int *)cudautils::allocate_host(2*max_strips*sizeof(int), stream);
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
   sst_data->prefixSeedStripsNCMask = (int *)cudautils::allocate_host(2*max_strips*sizeof(int), stream);
@@ -42,8 +42,8 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
   CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->detId), max_strips*sizeof(detId_t), cudaHostAllocDefault));
   CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->fedId), max_strips*sizeof(fedId_t), cudaHostAllocDefault));
   CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->fedCh), max_strips*sizeof(fedCh_t), cudaHostAllocDefault));
-  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->stripId), 2*max_strips*sizeof(uint16_t), cudaHostAllocDefault));
-  sst_data->adc = sst_data->stripId + max_strips;
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->stripId), max_strips*sizeof(uint16_t), cudaHostAllocDefault));
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->adc), max_strips*sizeof(uint8_t), cudaHostAllocDefault));
   CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->seedStripsMask), 2*max_strips*sizeof(int), cudaHostAllocDefault));
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
   CUDA_RT_CALL(cudaHostAlloc((void **)&(sst_data->prefixSeedStripsNCMask), 2*max_strips*sizeof(int), cudaHostAllocDefault));
@@ -53,8 +53,8 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
   sst_data->detId = (detId_t *)_mm_malloc(max_strips*sizeof(detId_t), IDEAL_ALIGNMENT);
   sst_data->fedId = (fedId_t *)_mm_malloc(max_strips*sizeof(fedId_t), IDEAL_ALIGNMENT);
   sst_data->fedCh = (fedCh_t *)_mm_malloc(max_strips*sizeof(fedCh_t), IDEAL_ALIGNMENT);
-  sst_data->stripId = (uint16_t *)_mm_malloc(2*max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
-  sst_data->adc = sst_data->stripId + max_strips;
+  sst_data->stripId = (uint16_t *)_mm_malloc(max_strips*sizeof(uint16_t), IDEAL_ALIGNMENT);
+  sst_data->adc = (uint8_t *)_mm_malloc(max_strips*sizeof(uint8_t), IDEAL_ALIGNMENT);
   sst_data->seedStripsMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
   sst_data->seedStripsNCMask = sst_data->seedStripsMask + max_strips;
   sst_data->prefixSeedStripsNCMask = (int *)_mm_malloc(2*max_strips*sizeof(int), IDEAL_ALIGNMENT);
@@ -131,6 +131,7 @@ void freeSSTData(sst_data_t *sst_data) {
 #ifdef CACHE_ALLOC
   cudautils::free_host(sst_data->detId);
   cudautils::free_host(sst_data->stripId);
+  cudautils::free_host(sst_data->adc);
   cudautils::free_host(sst_data->fedId);
   cudautils::free_host(sst_data->fedCh);
   cudautils::free_host(sst_data->seedStripsMask);
@@ -138,6 +139,7 @@ void freeSSTData(sst_data_t *sst_data) {
 #else
   CUDA_RT_CALL(cudaFreeHost(sst_data->detId));
   CUDA_RT_CALL(cudaFreeHost(sst_data->stripId));
+  CUDA_RT_CALL(cudaFreeHost(sst_data->adc));
   CUDA_RT_CALL(cudaFreeHost(sst_data->fedId));
   CUDA_RT_CALL(cudaFreeHost(sst_data->fedCh));
   CUDA_RT_CALL(cudaFreeHost(sst_data->seedStripsMask));
@@ -146,6 +148,7 @@ void freeSSTData(sst_data_t *sst_data) {
 #else
   free(sst_data->detId);
   free(sst_data->stripId);
+  free(sst_data->adc);
   free(sst_data->fedId);
   free(sst_data->fedCh);
   free(sst_data->seedStripsMask);
@@ -182,7 +185,7 @@ void freeClustData(clust_data_t *clust_data) {
 void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, const SiStripConditions *conditions, cpu_timing_t *cpu_timing) {
   const detId_t *__restrict__ detId = sst_data->detId;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
-  const uint16_t *__restrict__ adc = sst_data->adc;
+  const uint8_t *__restrict__ adc = sst_data->adc;
   const float *__restrict__ noise = calib_data->noise;
   const fedId_t *__restrict__ fedId = sst_data->fedId;
   const fedCh_t *__restrict__ fedCh = sst_data->fedCh;
@@ -215,7 +218,7 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, const 
       stripId_t strip = stripId[i];
       float noise_i = conditions->noise(fed, channel, strip);
 #endif
-      uint8_t adc_i = static_cast<uint8_t>(adc[i]);
+      uint8_t adc_i = adc[i];
       seedStripsMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? 1:0;
       seedStripsNCMask[i] = seedStripsMask[i];
       prefixSeedStripsNCMask[i] = 0;
@@ -307,7 +310,7 @@ static void findLeftRightBoundary(sst_data_t *sst_data, calib_data_t *calib_data
   const int *__restrict__ seedStripsNCIndex = sst_data->seedStripsNCIndex;
   const detId_t *__restrict__ detId = sst_data->detId;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
-  const uint16_t *__restrict__ adc = sst_data->adc;
+  const uint8_t *__restrict__ adc = sst_data->adc;
   const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ noise = calib_data->noise;
   const fedId_t *__restrict__ fedId = sst_data->fedId;
@@ -352,7 +355,7 @@ static void findLeftRightBoundary(sst_data_t *sst_data, calib_data_t *calib_data
 	stripId_t testStrip = stripId[testIndexLeft];
 	float testNoise = conditions->noise(testFed, testChannel, testStrip);
 #endif
-	uint8_t testADC = static_cast<uint8_t>(adc[testIndexLeft]);
+	uint8_t testADC = adc[testIndexLeft];
 
 	if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	  --indexLeft;
@@ -381,7 +384,7 @@ static void findLeftRightBoundary(sst_data_t *sst_data, calib_data_t *calib_data
         stripId_t testStrip = stripId[testIndexRight];
         float testNoise = conditions->noise(testFed, testChannel, testStrip);
 #endif
-	uint8_t testADC = static_cast<uint8_t>(adc[testIndexRight]);
+	uint8_t testADC = adc[testIndexRight];
 	if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	  ++indexRight;
 	  noiseSquared_i += testNoise*testNoise;
@@ -406,7 +409,7 @@ static void checkClusterCondition(sst_data_t *sst_data,calib_data_t *calib_data,
   const int *__restrict__ clusterLastIndexLeft = clust_data->clusterLastIndexLeft;
   const int *__restrict__ clusterLastIndexRight = clust_data->clusterLastIndexRight;
   const uint16_t *__restrict__ stripId = sst_data->stripId;
-  const uint16_t *__restrict__ adc = sst_data->adc;
+  const uint8_t *__restrict__ adc = sst_data->adc;
   const int nSeedStripsNC = sst_data->nSeedStripsNC;
   const float *__restrict__ gain = calib_data->gain;
   const fedId_t *__restrict__ fedId = sst_data->fedId;

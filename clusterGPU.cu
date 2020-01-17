@@ -10,7 +10,7 @@
 texture<float, 1, cudaReadModeElementType> noiseTexRef;
 texture<float, 1, cudaReadModeElementType> gainTexRef;
 texture<uint16_t, 1, cudaReadModeElementType> stripIdTexRef;
-texture<uint16_t, 1, cudaReadModeElementType> adcTexRef;
+texture<uint8_t, 1, cudaReadModeElementType> adcTexRef;
 
 static __inline__ __device__ float fetch_noise(int i)
 {
@@ -25,7 +25,7 @@ static __inline__ __device__ uint16_t fetch_stripId(int i)
   return tex1Dfetch(stripIdTexRef, i);
 }
 
-static __inline__ __device__ uint16_t fetch_adc(int i)
+static __inline__ __device__ uint8_t fetch_adc(int i)
 {
   return tex1Dfetch(adcTexRef, i);
 }
@@ -71,7 +71,7 @@ __global__
 static void setSeedStripsGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d, const SiStripConditionsGPU * conditions) {
   const int nStrips = sst_data_d->nStrips;
 #ifndef USE_TEXTURE
-  const uint16_t *__restrict__ adc = sst_data_d->adc;
+  const uint8_t *__restrict__ adc = sst_data_d->adc;
   const float *__restrict__ noise = calib_data_d->noise;
   const uint16_t *__restrict__ stripId = sst_data_d->stripId;
   const fedId_t *__restrict__ fedId = sst_data_d->fedId;
@@ -98,7 +98,7 @@ static void setSeedStripsGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d,
     stripId_t strip = stripId[i];
     float noise_i = conditions->noise(fed, channel, strip);
 #endif
-    uint8_t adc_i = static_cast<uint8_t>(ADC(i));
+    uint8_t adc_i = ADC(i);
     seedStripsMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? 1:0;
     seedStripsNCMask[i] = seedStripsMask[i];
   }
@@ -155,7 +155,7 @@ static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib
 #ifndef USE_TEXTURE
   const uint16_t *__restrict__ stripId = sst_data_d->stripId;
   const detId_t *__restrict__ detId = sst_data_d->detId;
-  const uint16_t *__restrict__ adc = sst_data_d->adc;
+  const uint8_t *__restrict__ adc = sst_data_d->adc;
   const float *__restrict__ noise = calib_data_d->noise;
   const fedId_t *__restrict__ fedId = sst_data_d->fedId;
   const fedCh_t *__restrict__ fedCh = sst_data_d->fedCh;
@@ -210,7 +210,7 @@ static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib
 	 testStrip = stripId[testIndexLeft];
 	 testNoise = conditions->noise(testFed, testChannel, testStrip);
 #endif
-	 testADC = static_cast<uint8_t>(ADC(testIndexLeft));
+	 testADC = ADC(testIndexLeft);
 
 	 if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	   --indexLeft;
@@ -239,7 +239,7 @@ static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib
          testStrip = stripId[testIndexRight];
          testNoise = conditions->noise(testFed, testChannel, testStrip);
 #endif
-	 testADC = static_cast<uint8_t>(ADC(testIndexRight));
+	 testADC = ADC(testIndexRight);
 	 if (testADC >= static_cast<uint8_t>(testNoise * ChannelThreshold)) {
 	   ++indexRight;
 	   noiseSquared_i += testNoise*testNoise;
@@ -264,7 +264,7 @@ __global__
 static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d, const SiStripConditionsGPU *conditions, clust_data_t *clust_data_d) {
 #ifndef USE_TEXTURE
    const uint16_t *__restrict__ stripId = sst_data_d->stripId;
-   const uint16_t *__restrict__ adc = sst_data_d->adc;
+   const uint8_t *__restrict__ adc = sst_data_d->adc;
    const float *__restrict__ gain = calib_data_d->gain;
    const fedId_t *__restrict__ fedId = sst_data_d->fedId;
    const fedCh_t *__restrict__ fedCh = sst_data_d->fedCh;
@@ -286,7 +286,7 @@ static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib
 
    int left, right, size, j;
    int charge;
-   uint16_t adc_j;
+   uint8_t adc_j;
    float gain_j;
    float adcSum=0.0f;
    int sumx=0;
@@ -337,7 +337,8 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
 #ifdef CACHE_ALLOC
   *pt_sst_data_d = (sst_data_t *)cudautils::allocate_device(dev, sizeof(sst_data_t), stream);
   sst_data_d->detId = (detId_t*)cudautils::allocate_device(dev, max_strips*sizeof(detId_t), stream);
-  sst_data_d->stripId = (uint16_t *)cudautils::allocate_device(dev, 2*max_strips*sizeof(uint16_t), stream);
+  sst_data_d->stripId = (uint16_t *)cudautils::allocate_device(dev, max_strips*sizeof(uint16_t), stream);
+  sst_data_d->adc = (uint8_t *)cudautils::allocate_device(dev, max_strips*sizeof(uint8_t), stream);
   sst_data_d->fedId = (fedId_t *)cudautils::allocate_device(dev, max_strips*sizeof(fedId_t), stream);
   sst_data_d->fedCh = (fedCh_t *)cudautils::allocate_device(dev, max_strips*sizeof(fedCh_t), stream);
   sst_data_d->seedStripsMask = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
@@ -346,13 +347,13 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   CUDA_RT_CALL(cudaMalloc((void **)pt_sst_data_d, sizeof(sst_data_t)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->detId), max_strips*sizeof(detId_t)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->stripId), 2*max_strips*sizeof(uint16_t)));
+  CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->adc), max_strips*sizeof(uint8_t)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->fedId), max_strips*sizeof(fedId_t)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->fedCh), max_strips*sizeof(fedCh_t)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int)));
 #endif
 
-  sst_data_d->adc = sst_data_d->stripId + max_strips;
   sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
   sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
   sst_data_d->d_temp_storage=NULL;
@@ -433,6 +434,7 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timin
   cudautils::free_device(dev, pt_sst_data_d);
   cudautils::free_device(dev, sst_data_d->detId);
   cudautils::free_device(dev, sst_data_d->stripId);
+  cudautils::free_device(dev, sst_data_d->adc);
   cudautils::free_device(dev, sst_data_d->fedId);
   cudautils::free_device(dev, sst_data_d->fedCh);
   cudautils::free_device(dev, sst_data_d->seedStripsMask);
@@ -441,6 +443,7 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timin
   CUDA_RT_CALL(cudaFree(pt_sst_data_d));
   CUDA_RT_CALL(cudaFree(sst_data_d->detId));
   CUDA_RT_CALL(cudaFree(sst_data_d->stripId));
+  CUDA_RT_CALL(cudaFree(sst_data_d->adc);
   CUDA_RT_CALL(cudaFree(sst_data_d->fedId));
   CUDA_RT_CALL(cudaFree(sst_data_d->fedCh));
   CUDA_RT_CALL(cudaFree(sst_data_d->seedStripsMask));
@@ -516,16 +519,16 @@ void findClusterGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_dat
   int nStrips = sst_data_d->nStrips;
   int *cpu_index = (int *)malloc(nStrips*sizeof(int));
   uint16_t *cpu_strip = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
-  uint16_t *cpu_adc = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
+  uint8_t *cpu_adc = (uint8_t *)malloc(nStrips*sizeof(uint8_t));
   float *cpu_noise = (float *)malloc(nStrips*sizeof(float));
 
   cudaMemcpy((void *)cpu_strip, sst_data_d->stripId, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)cpu_adc, sst_data_d->adc, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
+  cudaMemcpy((void *)cpu_adc, sst_data_d->adc, nStrips*sizeof(uint8_t), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)cpu_noise, calib_data_d->noise, nStrips*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)cpu_index, sst_data_d->seedStripsNCIndex, nStrips*sizeof(int), cudaMemcpyDeviceToHost);
 
   for (int i=0; i<nStrips; i++) {
-    std::cout<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<cpu_adc[i]<<" cpu index "<<cpu_index[i]<<std::endl;
+    std::cout<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<(unsigned int)cpu_adc[i]<<" cpu index "<<cpu_index[i]<<std::endl;
   }
 
   free(cpu_index);
@@ -571,7 +574,7 @@ void findClusterGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_dat
       std::cout<<"i="<<i<<" left "<<left<<" right "<<right<<" : ";
       int size=right-left+1;
       for (int j=0; j<size; j++){
-	std::cout<<(int)ADCs[j*nSeedStripsNC+i]<<" ";
+	std::cout<<(unsigned int)ADCs[j*nSeedStripsNC+i]<<" ";
       }
       std::cout<<std::endl;
     }
@@ -590,15 +593,15 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
 #ifdef GPU_DEBUG
   int nStrips = sst_data_d->nStrips;
   uint16_t *cpu_strip = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
-  uint16_t *cpu_adc = (uint16_t *)malloc(nStrips*sizeof(uint16_t));
+  uint8_t *cpu_adc = (uint8_t *)malloc(nStrips*sizeof(uint8_t));
   float *cpu_noise = (float *)malloc(nStrips*sizeof(float));
 
   cudaMemcpy((void *)cpu_strip, sst_data_d->stripId, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
-  cudaMemcpy((void *)cpu_adc, sst_data_d->adc, nStrips*sizeof(uint16_t), cudaMemcpyDeviceToHost);
+  cudaMemcpy((void *)cpu_adc, sst_data_d->adc, nStrips*sizeof(uint8_t), cudaMemcpyDeviceToHost);
   cudaMemcpy((void *)cpu_noise, calib_data_d->noise, nStrips*sizeof(float), cudaMemcpyDeviceToHost);
 
   for (int i=0; i<nStrips; i++) {
-    std::cout<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<cpu_adc[i]<<std::endl;
+    std::cout<<" cpu_strip "<<cpu_strip[i]<<" cpu_adc "<<(unsigned int)cpu_adc[i]<<std::endl;
   }
 
   free(cpu_strip);
@@ -714,10 +717,10 @@ void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t 
   CUDA_RT_CALL(cudaMemcpyAsync((void *)sst_data_d->detId, sst_data->detId, nStrips*sizeof(detId_t), cudaMemcpyHostToDevice, stream));
   CUDA_RT_CALL(cudaMemcpyAsync((void *)sst_data_d->fedId, sst_data->fedId, nStrips*sizeof(fedId_t), cudaMemcpyHostToDevice, stream));
   CUDA_RT_CALL(cudaMemcpyAsync((void *)sst_data_d->fedCh, sst_data->fedCh, nStrips*sizeof(fedCh_t), cudaMemcpyHostToDevice, stream));
-  CUDA_RT_CALL(cudaMemcpyAsync((void *)sst_data_d->adc, sst_data->adc, nStrips*sizeof(uint16_t), cudaMemcpyHostToDevice, stream));
+  CUDA_RT_CALL(cudaMemcpyAsync((void *)sst_data_d->adc, sst_data->adc, nStrips*sizeof(uint8_t), cudaMemcpyHostToDevice, stream));
 #if USE_TEXTURE
   cudaBindTexture(0, stripIdTexRef, (void *)sst_data_d->stripId, nStrips*sizeof(uint16_t));
-  cudaBindTexture(0, adcTexRef, (void *)sst_data_d->adc, nStrips*sizeof(uint16_t));
+  cudaBindTexture(0, adcTexRef, (void *)sst_data_d->adc, nStrips*sizeof(uint8_t));
 #endif
 #ifdef GPU_TIMER
   gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);

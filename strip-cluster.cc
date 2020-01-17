@@ -61,12 +61,12 @@ int main()
     digidata_in.read((char*)&(sst_data[0]->fedId[i]), sizeof(fedId_t));
     digidata_in.read((char*)&(sst_data[0]->fedCh[i]), sizeof(fedCh_t));
     digidata_in.read((char*)&(sst_data[0]->stripId[i]), sizeof(uint16_t));
-    digidata_in.read((char*)&(sst_data[0]->adc[i]), sizeof(uint16_t));
+    digidata_in.read((char*)&(sst_data[0]->adc[i]), sizeof(uint8_t));
     digidata_in.read((char*)&(calib_data->noise[i]), sizeof(float));
     digidata_in.read((char*)&(calib_data->gain[i]), sizeof(float));
     digidata_in.read((char*)&(calib_data->bad[i]), sizeof(bool));
     if (calib_data->bad[i])
-      std::cout<<" i "<<i<<" detid "<< sst_data[0]->detId[i] <<" fedId "<<sst_data[0]->fedId[i]<<" fedCh "<<(int)sst_data[0]->fedCh[i]<<" strip "<<sst_data[0]->stripId[i]<<" adc "<<sst_data[0]->adc[i]<<std::endl;
+      std::cout<<" i "<<i<<" detid "<< sst_data[0]->detId[i] <<" fedId "<<sst_data[0]->fedId[i]<<" fedCh "<<(int)sst_data[0]->fedCh[i]<<" strip "<<sst_data[0]->stripId[i]<<" adc "<<(unsigned int)sst_data[0]->adc[i]<<std::endl;
     i++;
   }
   sst_data[0]->nStrips=i;
@@ -78,7 +78,7 @@ int main()
     std::memcpy(sst_data[i]->stripId, sst_data[0]->stripId, sizeof(uint16_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->fedId, sst_data[0]->fedId, sizeof(fedId_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->fedCh, sst_data[0]->fedCh, sizeof(fedCh_t)*sst_data[0]->nStrips);
-    std::memcpy(sst_data[i]->adc, sst_data[0]->adc, sizeof(uint16_t)*sst_data[0]->nStrips);
+    std::memcpy(sst_data[i]->adc, sst_data[0]->adc, sizeof(uint8_t)*sst_data[0]->nStrips);
     sst_data[i]->nStrips = sst_data[0]->nStrips;
   }
 
@@ -166,7 +166,7 @@ int main()
 	int right=clust_data[i]->clusterLastIndexRight[j];
 	int size=right-index+1;
 	for (int k=0; k<size; k++){
-	  std::cout<<(int)clust_data[i]->clusterADCs[k*sst_data[i]->nSeedStripsNC+j]<<" ";
+	  std::cout<<(unsigned int)clust_data[i]->clusterADCs[k*sst_data[i]->nSeedStripsNC+j]<<" ";
 	}
 	std::cout<<std::endl;
       }

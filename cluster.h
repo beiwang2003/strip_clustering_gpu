@@ -19,7 +19,8 @@
 
 typedef struct {
   detId_t *detId;
-  uint16_t *stripId, *adc;
+  uint16_t *stripId;
+  uint8_t *adc;
   fedId_t *fedId;
   fedCh_t *fedCh;
   int *seedStripsNCIndex, *seedStripsMask, *seedStripsNCMask, *prefixSeedStripsNCMask;
