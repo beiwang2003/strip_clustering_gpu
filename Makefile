@@ -1,5 +1,5 @@
 SYSTEMS = $(shell hostname)
-COMPILER = intel
+COMPILER = gnu
 
 #CUDA_PATH should set in the calling shell if CMSSW tools are not used
 
@@ -34,7 +34,7 @@ ifeq ($(COMPILER), gnu)
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g \
 	  -I$(CUDA_PATH)/include -I$(CUBROOT) \
-	  -DUSE_GPU -DCACHE_ALLOC #-DNUMA_FT -DOUTPUT -DCPU_DEBUG
+	  -DUSE_GPU -DCACHE_ALLOC -DNUMA_FT -DCALIB_1D #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g
 endif
@@ -44,7 +44,7 @@ ifeq ($(COMPILER), intel)
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -xHost \
 	  -qopt-zmm-usage=high -qopt-report=5 \
 	  -I$(CUDA_PATH)/include -I$(CUBROOT) -g \
-	  -DNUMA_FT #-DUSE_GPU #-DOUTPUT -DCPU_DEBUG
+	  -DNUMA_FT #-DCALIB_1D #-DUSE_GPU #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -qopenmp -xHost \
 	  -qopt-zmm-usage=high -qopt-report=5 -g
 endif
@@ -52,7 +52,7 @@ endif
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 --default-stream per-thread -arch=$(GPUARCH) \
  -I$(CUBROOT) --ptxas-options=-v -lineinfo \
- -DCACHE_ALLOC #-DCOPY_ADC -DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
+ -DCACHE_ALLOC #-DCOPY_ADC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
  # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L$(CUDA_PATH)/lib64
 
@@ -61,15 +61,17 @@ ifeq ($(COMPILER), intel)
 endif
 
 strip-cluster : strip-cluster.o \
-	  cluster.o clusterGPU.o allocate_host.o allocate_device.o
+	  cluster.o clusterGPU.o SiStripConditions.o allocate_host.o allocate_device.o
 	$(CC) $(LDFLAGS) $(CUDALDFLAGS) -o strip-cluster strip-cluster.o \
-          cluster.o clusterGPU.o allocate_host.o allocate_device.o
-strip-cluster.o: strip-cluster.cc cluster.h
+          cluster.o clusterGPU.o SiStripConditions.o allocate_host.o allocate_device.o
+strip-cluster.o: strip-cluster.cc cluster.h SiStripConditions.h
 	$(CC) $(CXXFLAGS) -o strip-cluster.o -c strip-cluster.cc
-cluster.o: cluster.cc cluster.h
+cluster.o: cluster.cc cluster.h 
 	$(CC) $(CXXFLAGS) -o cluster.o -c cluster.cc
 clusterGPU.o: clusterGPU.cu 
 	$(NVCC) $(CUDAFLAGS) -o clusterGPU.o -c clusterGPU.cu
+SiStripConditions.o: SiStripConditions.cc SiStripConditions.h
+	$(CC) $(CXXFLAGS) -o SiStripConditions.o -c SiStripConditions.cc
 allocate_host.o: allocate_host.cc
 	$(CC) $(CXXFLAGS) -o allocate_host.o -c allocate_host.cc
 allocate_device.o: allocate_device.cc

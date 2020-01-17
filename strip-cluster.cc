@@ -1,12 +1,14 @@
 #include <fstream>
 #include <iostream>
 #include <cstring>
+#include <memory>
+#include <functional>
 #if _OPENMP
 #include <omp.h>
 #endif
-#include "cluster.h"
 #include <cuda_runtime.h>
 #include "clusterGPU.cuh"
+#include "cluster.h"
 
 int main()
 {
@@ -35,6 +37,7 @@ int main()
     allocateSSTData(max_strips, sst_data[i], stream[i]);
     allocateClustData(max_seedstrips, clust_data[i], stream[i]);
   }
+
 #ifdef NUMA_FT
 #pragma omp parallel num_threads(nStreams)
   {
@@ -46,26 +49,35 @@ int main()
     }
   }
 #endif
-  // read in the data
+
+  // read in calibration data (only once)
+  std::string condfilename("stripcond.bin");
+  auto conditions = std::make_unique<SiStripConditions>(condfilename);
+
+  // read in the 1D SST and calibration data
   std::ifstream digidata_in("digidata.bin", std::ofstream::in | std::ios::binary);
   int i=0;
   while (digidata_in.read((char*)&(sst_data[0]->detId[i]), sizeof(detId_t)).gcount() == sizeof(detId_t)) {
+    digidata_in.read((char*)&(sst_data[0]->fedId[i]), sizeof(fedId_t));
+    digidata_in.read((char*)&(sst_data[0]->fedCh[i]), sizeof(fedCh_t));
     digidata_in.read((char*)&(sst_data[0]->stripId[i]), sizeof(uint16_t));
     digidata_in.read((char*)&(sst_data[0]->adc[i]), sizeof(uint16_t));
     digidata_in.read((char*)&(calib_data->noise[i]), sizeof(float));
     digidata_in.read((char*)&(calib_data->gain[i]), sizeof(float));
     digidata_in.read((char*)&(calib_data->bad[i]), sizeof(bool));
     if (calib_data->bad[i])
-      std::cout<<"index "<<i<<" detid "<<sst_data[0]->detId[i]<<" stripId "<<sst_data[0]->stripId[i]<<
-	" adc "<<sst_data[0]->adc[i]<<" noise "<<calib_data->noise[i]<<" gain "<<calib_data->gain[i]<<" bad "<<calib_data->bad[i]<<std::endl;
+      std::cout<<" i "<<i<<" detid "<< sst_data[0]->detId[i] <<" fedId "<<sst_data[0]->fedId[i]<<" fedCh "<<(int)sst_data[0]->fedCh[i]<<" strip "<<sst_data[0]->stripId[i]<<" adc "<<sst_data[0]->adc[i]<<std::endl;
     i++;
   }
   sst_data[0]->nStrips=i;
+  std::cout<<" Finish reading "<<i<<" active strips"<<std::endl;
 
   // copy data to other streams
   for (int i=1; i<nStreams; i++) {
     std::memcpy(sst_data[i]->detId, sst_data[0]->detId, sizeof(detId_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->stripId, sst_data[0]->stripId, sizeof(uint16_t)*sst_data[0]->nStrips);
+    std::memcpy(sst_data[i]->fedId, sst_data[0]->fedId, sizeof(fedId_t)*sst_data[0]->nStrips);
+    std::memcpy(sst_data[i]->fedCh, sst_data[0]->fedCh, sizeof(fedCh_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->adc, sst_data[0]->adc, sizeof(uint16_t)*sst_data[0]->nStrips);
     sst_data[i]->nStrips = sst_data[0]->nStrips;
   }
@@ -80,6 +92,7 @@ int main()
     clust_data_d[i] = (clust_data_t *)malloc(sizeof(clust_data_t));
   }
   calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
+  std::unique_ptr<SiStripConditionsGPU, std::function<void(SiStripConditionsGPU*)>> condGPU(conditions->toGPU(), [](SiStripConditionsGPU* p) { cudaFree(p); });
 
   gpu_timing_t *gpu_timing[nStreams];
   for (int i=0; i<nStreams; i++) {
@@ -92,14 +105,14 @@ int main()
   int gpu_device = 0;
   CUDA_RT_CALL(cudaSetDevice(gpu_device));
   CUDA_RT_CALL(cudaGetDevice(&gpu_device));
+
+  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
+  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
 #endif
 
   double t0 = omp_get_wtime();
 
 #ifdef USE_GPU
-    allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
-    cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
-
     for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
       for (int i=0; i<nStreams; i++) {
@@ -108,11 +121,11 @@ int main()
 
 	cpySSTDataToGPU(sst_data[i], sst_data_d[i], gpu_timing[i], stream[i]);
 
-	setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, gpu_timing[i], stream[i]);
+	setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), gpu_timing[i], stream[i]);
 
 	allocateClustDataGPU(max_seedstrips, clust_data_d[i], &pt_clust_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
-	findClusterGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], stream[i]);
+	findClusterGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], stream[i]);
 
 	cpyGPUToCPU(sst_data_d[i], pt_sst_data_d[i], clust_data[i], clust_data_d[i], gpu_timing[i], stream[i]);
 
@@ -121,16 +134,14 @@ int main()
 	freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
       }
     }
-
-    freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
 #else
-  for (int iter=0; iter<nIter; iter++) {
+    for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
-      setSeedStripsNCIndex(sst_data[i], calib_data, cpu_timing[i]);
+      setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
 
-      findCluster(sst_data[i], calib_data, clust_data[i], cpu_timing[i]);
+      findCluster(sst_data[i], calib_data, conditions.get(), clust_data[i], cpu_timing[i]);
     }
   }
 #endif
@@ -182,7 +193,7 @@ int main()
   std::cout<<" findBoundary function Time: "<<cpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" checkCluster function Time: "<<cpu_timing[0]->checkClusterTime<<std::endl;
   std::cout<<" Total Time: "<<t1-t0<<std::endl;
-  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
+  //  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
 #endif
 
 #ifdef USE_GPU
@@ -191,6 +202,7 @@ int main()
     free(clust_data_d[i]);
     free(gpu_timing[i]);
   }
+  freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
   free(calib_data_d);
 #endif
 
