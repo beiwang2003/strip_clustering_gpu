@@ -208,18 +208,23 @@ void setSeedStripsNCIndex(sst_data_t *sst_data, calib_data_t *calib_data, const 
     t0 = omp_get_wtime();
 #endif
     // mark seed strips
-#pragma omp for simd aligned(fedId,fedCh,stripId,seedStripsMask,seedStripsNCMask,prefixSeedStripsNCMask: CACHELINE_BYTES)
+#pragma omp for simd aligned(noise,fedId,fedCh,stripId,adc,seedStripsMask,seedStripsNCMask,prefixSeedStripsNCMask: CACHELINE_BYTES)
     for (int i=0; i<nStrips; i++) {
+      stripId_t strip = stripId[i];
+      if (strip !=invStrip) {
 #ifdef CALIB_1D
       float noise_i = noise[i];
 #else
       fedId_t fed = fedId[i];
       fedCh_t channel = fedCh[i];
-      stripId_t strip = stripId[i];
+      //stripId_t strip = stripId[i];
       float noise_i = conditions->noise(fed, channel, strip);
 #endif
       uint8_t adc_i = adc[i];
       seedStripsMask[i] = (adc_i >= static_cast<uint8_t>( noise_i * SeedThreshold)) ? 1:0;
+      } else {
+	seedStripsMask[i] = 0;
+      }
       seedStripsNCMask[i] = seedStripsMask[i];
       prefixSeedStripsNCMask[i] = 0;
     }

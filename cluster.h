@@ -12,7 +12,7 @@
 
 #define IDEAL_ALIGNMENT 64
 #define CACHELINE_BYTES 64
-#define MAX_STRIPS 600000
+#define MAX_STRIPS 810000 // 600000 for active strips
 #define MAX_SEEDSTRIPS 150000
 
 //using detId_t = uint32_t;
