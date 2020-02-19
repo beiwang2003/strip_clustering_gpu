@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+//#include <cuda_runtime_api.h>
 //#include "cluster.h"
 #include <mm_malloc.h>
 #include <iostream>
@@ -9,7 +9,12 @@
 #include "allocate_host.h"
 #endif
 #endif
+//#include "cluster.h"
+#include "FEDRawData.h"
+#include "SiStripFEDBuffer.h"
 #include "cluster.h"
+
+//#define DBGPRINT 1
 
 #if _OPENMP
 void print_binding_info() {
@@ -25,6 +30,168 @@ void print_binding_info() {
   free(place_processors);
 }
 #endif
+
+void readin_raw_digidata(const std::string& digifilename, const SiStripConditions *conditions, sst_data_t *sst_data, calib_data_t *calib_data) {
+
+  std::ifstream digidata_in(digifilename, std::ios::in | std::ios::binary);
+  int i=0;
+  while (digidata_in.read((char*)&(sst_data->detId[i]), sizeof(detId_t)).gcount() == sizeof(detId_t)) {
+    digidata_in.read((char*)&(sst_data->fedId[i]), sizeof(fedId_t));
+    digidata_in.read((char*)&(sst_data->fedCh[i]), sizeof(fedCh_t));
+    digidata_in.read((char*)&(sst_data->stripId[i]), sizeof(uint16_t));
+    digidata_in.read((char*)&(sst_data->adc[i]), sizeof(uint8_t));
+    digidata_in.read((char*)&(calib_data->noise[i]), sizeof(float));
+    digidata_in.read((char*)&(calib_data->gain[i]), sizeof(float));
+    digidata_in.read((char*)&(calib_data->bad[i]), sizeof(bool));
+    if (calib_data->bad[i])
+      std::cout<<" i "<<i<<" detid "<< sst_data->detId[i] <<" fedId "<<sst_data->fedId[i]<<" fedCh "<<(int)sst_data->fedCh[i]<<" strip "<<sst_data->stripId[i]<<" adc "<<(unsigned int)sst_data->adc[i]<<std::endl;
+    i++;
+  }
+  sst_data->nStrips=i;
+  std::cout<<" Finish reading "<<i<<" active strips"<<std::endl;
+}
+
+void readin_raw_data(const std::string& datafilename, const SiStripConditions *conditions, ChannelLocs& chanlocs, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream) {
+  //void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream) {
+
+  std::ifstream datafile(datafilename, std::ios::in | std::ios::binary);
+  datafile.seekg(sizeof(size_t)); // skip initial event mark
+
+  std::vector<FEDRawData> fedRawDatav;
+  std::vector<fedId_t> fedIdv;
+  std::vector<FEDBuffer> fedBufferv;
+  std::vector<fedId_t> fedIndex(SiStripConditions::kFedCount);
+
+  //  ChannelLocs chanlocs(conditions->detToFeds().size(), stream);
+
+  fedRawDatav.reserve(SiStripConditions::kFedCount);
+  fedIdv.reserve(SiStripConditions::kFedCount);
+  fedBufferv.reserve(SiStripConditions::kFedCount);
+  auto eventno = 0;
+
+  while (!datafile.eof()) {
+    eventno++;
+    size_t size = 0;
+    size_t totalSize = 0;
+    FEDReadoutMode mode = READOUT_MODE_INVALID;
+
+    fedRawDatav.clear();
+    fedBufferv.clear();
+    fedIdv.clear();
+    fedIndex.clear();
+    fedIndex.resize(SiStripConditions::kFedCount, invFed);
+    //alldata.clear();
+
+    // read in the raw data
+    while (datafile.read((char*) &size, sizeof(size)).gcount() == sizeof(size) && size != std::numeric_limits<size_t>::max()) {
+      int fedId = 0;
+      datafile.read((char*) &fedId, sizeof(fedId));
+#if defined(DBGPRINT)
+      std::cout << "Event # " <<eventno<< " Reading FEDRawData ID " << fedId << " size " << size << std::endl;
+#endif
+      fedRawDatav.emplace_back(size);
+      auto& rawData = fedRawDatav.back();
+
+      datafile.read((char*) rawData.get(), size);
+
+      fedIndex[fedId-SiStripConditions::kFedFirst] = fedIdv.size();
+      fedIdv.push_back(fedId);
+
+      fedBufferv.emplace_back(rawData.get(), rawData.size());
+
+      if (fedBufferv.size() == 1) {
+        mode = fedBufferv.back().readoutMode();
+      } else {
+        assert(fedBufferv.back().readoutMode() == mode);
+      }
+      totalSize += size;
+    }
+
+    const auto& detmap = conditions->detToFeds();
+    size_t offset = 0;
+
+    // iterate over the detector in DetID/APVPair order
+    // mapping out where the data are
+    const uint16_t headerlen = mode == READOUT_MODE_ZERO_SUPPRESSED ? 7 : 2;
+
+    for(size_t i = 0; i < detmap.size(); ++i) {
+      const auto& detp = detmap[i];
+
+      auto fedId = detp.fedID();
+      auto fedi = fedIndex[fedId-SiStripConditions::kFedFirst];
+      if (fedi != invFed) {
+        const auto& buffer = fedBufferv[fedi];
+        const auto& channel = buffer.channel(detp.fedCh());
+
+        if (channel.length() >= headerlen) {
+          chanlocs.setChannelLoc(i, channel.data(), channel.offset()+headerlen, offset, channel.length()-headerlen, detp.fedID(), detp.fedCh());
+          offset += channel.length()-headerlen;
+        } else {
+          chanlocs.setChannelLoc(i, channel.data(), channel.offset(), offset, channel.length(), detp.fedID(), detp.fedCh());
+          offset += channel.length();
+          assert(channel.length() == 0);
+        }
+      } else {
+        chanlocs.setChannelLoc(i, nullptr, 0, 0, 0, invFed, 0);
+	std::cout << "Missing fed " << fedi << " for detID " << detp.fedID() << std::endl;
+	exit (1);
+      }
+    }
+
+    sst_data->nStrips = offset;
+    assert(offset < MAX_STRIPS);
+
+    std::cout << "Raw data size " << totalSize << " channel data size " << offset << std::endl;
+    //alldata.resize(offset); // resize to the amount of data
+
+    unpack(chanlocs, conditions, sst_data, calib_data);
+  }
+}
+
+void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data) {
+
+  for (int chan=0; chan<chanlocs.size(); chan++) {
+    const auto fedid = chanlocs.fedID(chan);
+    const auto fedch = chanlocs.fedCh(chan);
+    const auto detid = conditions->detID(fedid, fedch);
+    const auto ipoff = SiStripConditionsBase::kStripsPerChannel*conditions->iPair(fedid, fedch);
+
+    const auto data = chanlocs.input(chan);
+    const auto len = chanlocs.length(chan);
+
+    if (data != nullptr && len > 0) {
+      auto aoff = chanlocs.offset(chan);
+      auto choff = chanlocs.inoff(chan);
+      const auto end = aoff + len;
+
+      while (aoff < end) {
+        sst_data->stripId[aoff] = invStrip;
+        sst_data->detId[aoff] = invDet;
+        sst_data->adc[aoff] = data[(choff++)^7];
+        auto stripIndex = sst_data->adc[aoff++] + ipoff;
+
+        sst_data->stripId[aoff] = invStrip;
+        sst_data->detId[aoff] = detid;
+        sst_data->adc[aoff] = data[(choff++)^7];
+        const auto groupLength = sst_data->adc[aoff++];
+
+        for (auto i = 0; i < groupLength; ++i) {
+#ifdef CALIB_1D
+          calib_data->noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
+          calib_data->gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
+          calib_data->bad[aoff]   = conditions->bad(fedid, fedch, stripIndex);
+#endif
+	  sst_data->fedId[aoff] = fedid;
+	  sst_data->fedCh[aoff] = fedch;
+          sst_data->detId[aoff] = detid;
+          sst_data->stripId[aoff] = stripIndex++;
+          sst_data->adc[aoff++] = data[(choff++)^7];
+        }
+      }
+    }
+  }
+}
+
 
 void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
 #ifdef USE_GPU

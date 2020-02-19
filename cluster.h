@@ -1,5 +1,6 @@
 #ifndef _CLUSTER_
 #define _CLUSTER_
+#include <fstream>
 #include <cstdlib>
 #include <cstdint>
 //#ifdef USE_GPU
@@ -9,11 +10,12 @@
 #include <omp.h>
 #endif
 #include "SiStripConditions.h"
+#include "FEDChannel.h"
 
 #define IDEAL_ALIGNMENT 64
 #define CACHELINE_BYTES 64
 #define MAX_STRIPS 810000 // 600000 for active strips
-#define MAX_SEEDSTRIPS 150000
+#define MAX_SEEDSTRIPS 200000
 
 //using detId_t = uint32_t;
 
@@ -51,6 +53,12 @@ typedef struct {
 } cpu_timing_t;
 
 void print_binding_info();
+
+//void readin_raw_digidata(const std::string& digifilename, const SiStripConditions *conditions, sst_data_t *sst_data, calib_data_t *calib_data);
+void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, ChannelLocs& chanlocs, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream);
+void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream);
+
+void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data);
 
 void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream);
 void allocateCalibData(int max_strips, calib_data_t *calib_data);

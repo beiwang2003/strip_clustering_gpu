@@ -15,7 +15,8 @@ int main()
   const int max_strips = MAX_STRIPS;
   const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
-  const int nIter = 840/nStreams;
+  //  const int nIter = 840/nStreams;
+  const int nIter = 1;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
   clust_data_t *clust_data[nStreams];
@@ -54,27 +55,16 @@ int main()
   std::string condfilename("stripcond.bin");
   auto conditions = std::make_unique<SiStripConditions>(condfilename);
 
-  // read in the 1D SST and calibration data
-#ifdef ACTIVE_STRIPS
-  std::ifstream digidata_in("digidata.bin", std::ofstream::in | std::ios::binary);
-#else
-  std::ifstream digidata_in("digidata_all.bin", std::ofstream::in | std::ios::binary);
-#endif
-  int i=0;
-  while (digidata_in.read((char*)&(sst_data[0]->detId[i]), sizeof(detId_t)).gcount() == sizeof(detId_t)) {
-    digidata_in.read((char*)&(sst_data[0]->fedId[i]), sizeof(fedId_t));
-    digidata_in.read((char*)&(sst_data[0]->fedCh[i]), sizeof(fedCh_t));
-    digidata_in.read((char*)&(sst_data[0]->stripId[i]), sizeof(uint16_t));
-    digidata_in.read((char*)&(sst_data[0]->adc[i]), sizeof(uint8_t));
-    digidata_in.read((char*)&(calib_data->noise[i]), sizeof(float));
-    digidata_in.read((char*)&(calib_data->gain[i]), sizeof(float));
-    digidata_in.read((char*)&(calib_data->bad[i]), sizeof(bool));
-    if (calib_data->bad[i])
-      std::cout<<" i "<<i<<" detid "<< sst_data[0]->detId[i] <<" fedId "<<sst_data[0]->fedId[i]<<" fedCh "<<(int)sst_data[0]->fedCh[i]<<" strip "<<sst_data[0]->stripId[i]<<" adc "<<(unsigned int)sst_data[0]->adc[i]<<std::endl;
-    i++;
-  }
-  sst_data[0]->nStrips=i;
-  std::cout<<" Finish reading "<<i<<" active strips"<<std::endl;
+  //#ifdef ACTIVE_STRIPS
+  //std::string digifilename("digidata.bin");
+  //#else
+  //std::string digifilename("digidata_all.bin");
+  //#endif
+  //readin_raw_digidata(digifilename, conditions.get(), sst_data[0], calib_data);
+
+  /*
+  std::string datafilename("stripdata.bin");
+  readin_raw_data(datafilename, conditions.get(), sst_data[0], calib_data, stream[0]);
 
   // copy data to other streams
   for (int i=1; i<nStreams; i++) {
@@ -84,6 +74,16 @@ int main()
     std::memcpy(sst_data[i]->fedCh, sst_data[0]->fedCh, sizeof(fedCh_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->adc, sst_data[0]->adc, sizeof(uint8_t)*sst_data[0]->nStrips);
     sst_data[i]->nStrips = sst_data[0]->nStrips;
+  }
+  */
+
+  // when moving ChannelLocs into a vector and passing to readin_raw_data, it cause SIGFAULT error
+  std::vector<ChannelLocs> chanlocsv;
+  for (auto i=0; i<nStreams; i++) {
+    chanlocsv.emplace_back(conditions->detToFeds().size(), stream[i]);
+    //    std::string datafilename("stripdata"+std::to_string(i)+".bin");
+    std::string datafilename("stripdata.bin");
+    readin_raw_data(datafilename, conditions.get(), chanlocsv[i], sst_data[i], calib_data, stream[i]);
   }
 
 #ifdef USE_GPU
@@ -153,6 +153,8 @@ int main()
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
+      //      unpack(chanlocsv[i], conditions.get(), sst_data[i], calib_data);
+
       setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
 
       findCluster(sst_data[i], calib_data, conditions.get(), clust_data[i], cpu_timing[i]);
@@ -167,7 +169,7 @@ int main()
   CUDA_RT_CALL(cudaDeviceSynchronize());
 #endif
   // print out the result
-  for (i=0; i<nStreams; i++) {
+  for (int i=0; i<nStreams; i++) {
 #ifdef USE_GPU
     sst_data[i]->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
 #endif
