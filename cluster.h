@@ -1,5 +1,8 @@
 #ifndef _CLUSTER_
 #define _CLUSTER_
+#include "FEDRawData.h"
+#include "SiStripFEDBuffer.h"
+
 #include <fstream>
 #include <cstdlib>
 #include <cstdint>
@@ -30,6 +33,7 @@ typedef struct {
   void *d_temp_storage = NULL;
   int nSeedStripsNC;
   int nStrips;
+  size_t totalRawSize;
 } sst_data_t;
 
 typedef struct {
@@ -45,6 +49,7 @@ typedef struct {
 } clust_data_t;
 
 typedef struct {
+  float unpackRawDataTime;
   float setSeedStripsTime;
   float setNCSeedStripsTime;
   float setStripIndexTime;
@@ -54,9 +59,11 @@ typedef struct {
 
 void print_binding_info();
 
-//void readin_raw_digidata(const std::string& digifilename, const SiStripConditions *conditions, sst_data_t *sst_data, calib_data_t *calib_data);
-void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, ChannelLocs& chanlocs, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream);
+void readin_raw_digidata(const std::string& digifilename, const SiStripConditions *conditions, sst_data_t *sst_data, calib_data_t *calib_data);
 void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream);
+
+void readinRawData(const std::string& datafilename, const SiStripConditions *conditions, std::vector<FEDRawData>& fedRawDatav, std::vector<FEDBuffer>& fedBufferv, std::vector<fedId_t>& fedIndex, FEDReadoutMode& mode, sst_data_t* sst_data);
+void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, ChannelLocs& chanlocs, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream);
 
 void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data);
 

@@ -18,6 +18,7 @@ ChannelLocs::ChannelLocs(size_t size, cudaStream_t stream)
     length_ = cudautils::make_host_unique<uint16_t[]>(size, stream);
     fedID_ = cudautils::make_host_unique<fedId_t[]>(size, stream);
     fedCh_ = cudautils::make_host_unique<fedCh_t[]>(size, stream);
+    // std::cout<<"Complete ChannelLocs Construction at stream"<<stream<<std::endl;
   }
 }
 
@@ -45,6 +46,7 @@ ChannelLocsGPU::ChannelLocsGPU(size_t size, cudaStream_t stream)
     length_ = cudautils::make_device_unique<uint16_t[]>(size, stream);
     fedID_ = cudautils::make_device_unique<fedId_t[]>(size, stream);
     fedCh_ = cudautils::make_device_unique<fedCh_t[]>(size, stream);
+    //std::cout<<"Complete ChannelLocsGPU Construction at stream"<<stream<<std::endl;
 
     ChanLocStruct chanstruct;
     chanstruct.Fill(*this);

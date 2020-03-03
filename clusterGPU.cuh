@@ -16,6 +16,7 @@ typedef	struct {
   float memTransDHTime;
   float memAllocTime;
   float memFreeTime;
+  float unpackRawDataTime;
   float setSeedStripsTime;
   float setNCSeedStripsTime;
   float setStripIndexTime;
@@ -35,6 +36,8 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d,
 void cpyGPUToCPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, clust_data_t *clust_data, clust_data_t *clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *calib_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
+
+void unpackRawDataGPU(const SiStripConditions *conditions, const SiStripConditionsGPU *conditionsGPU, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, ChannelLocs& chanlocs, ChannelLocsGPU& chanlocsGPU, cudautils::host::unique_ptr<uint8_t[]>& fedRawDataHost, cudautils::device::unique_ptr<uint8_t[]>& fedRawDataGPU, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, const FEDReadoutMode& mode, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
 void findClusterGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, const SiStripConditionsGPU *conditions, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, cudaStream_t stream);
 
