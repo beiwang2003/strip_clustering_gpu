@@ -214,11 +214,11 @@ u      std::cout << "Event # " <<eventno<< " Reading FEDRawData ID " << fedId <<
   }
 }
 
-void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, ChannelLocs& chanlocs, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream) {
+void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream) {
 #ifdef CPU_TIMER
   double t0=omp_get_wtime();
 #endif
-  //ChannelLocs chanlocs(conditions->detToFeds().size(), stream);
+  ChannelLocs chanlocs(conditions->detToFeds().size(), stream);
   const auto& detmap = conditions->detToFeds();
   size_t offset = 0;
 

@@ -16,8 +16,8 @@ int main()
   const int max_strips = MAX_STRIPS;
   const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
-  //const int nIter = 840/nStreams;
-  const int nIter = 1;
+  const int nIter = 840/nStreams;
+  //  const int nIter = 1;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
   clust_data_t *clust_data[nStreams];
@@ -56,12 +56,15 @@ int main()
   std::string condfilename("stripcond.bin");
   auto conditions = std::make_unique<SiStripConditions>(condfilename);
 
+  // option 1: readin strip info
   //#ifdef ACTIVE_STRIPS
   //std::string digifilename("digidata.bin");
   //#else
   //std::string digifilename("digidata_all.bin");
   //#endif
   //readin_raw_digidata(digifilename, conditions.get(), sst_data[0], calib_data);
+
+  // option 2: read in raw data and convert to strip info
   /*
   std::string datafilename("stripdata.bin");
   readin_raw_data(datafilename, conditions.get(), sst_data[0], calib_data, stream[0]);
@@ -76,33 +79,33 @@ int main()
   }
   */
 
+  // option 3: read in raw data only (conversion will be done in the loop)
   std::vector<std::vector<FEDRawData>> fedRawDataAll(nStreams);
   std::vector<std::vector<FEDBuffer>> fedBufferAll(nStreams);
   std::vector<std::vector<fedId_t>> fedIndexAll(nStreams);
-  std::vector<ChannelLocs> chanlocsAll;
   std::vector<FEDReadoutMode> modeAll(nStreams);
-  std::vector<cudautils::host::unique_ptr<uint8_t[]>> fedRawDataHostAll(nStreams);
+  //std::vector<ChannelLocs> chanlocsAll;
+  //std::vector<cudautils::host::unique_ptr<uint8_t[]>> fedRawDataHostAll(nStreams);
   for (auto i=0; i<nStreams; i++) {
     std::string datafilename("stripdata.bin");
     readinRawData(datafilename, conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], modeAll[i], sst_data[i]);
-    chanlocsAll.emplace_back(conditions->detToFeds().size(), stream[i]);
-    fedRawDataHostAll[i] = cudautils::make_host_unique<uint8_t[]>(sst_data[i]->totalRawSize, stream[i]);
+    //chanlocsAll.emplace_back(conditions->detToFeds().size(), stream[i]);
+    //fedRawDataHostAll[i] = cudautils::make_host_unique<uint8_t[]>(sst_data[i]->totalRawSize, stream[i]);
   }
 
 #ifdef USE_GPU
   sst_data_t *sst_data_d[nStreams], *pt_sst_data_d[nStreams];
   calib_data_t *calib_data_d, *pt_calib_data_d;
   clust_data_t *clust_data_d[nStreams], *pt_clust_data_d[nStreams];
-  std::vector<ChannelLocsGPU> chanlocsAllGPU;
-  std::vector<cudautils::device::unique_ptr<uint8_t[]>> fedRawDataGPUAll(nStreams);
+  //std::vector<ChannelLocsGPU> chanlocsAllGPU;
+  //std::vector<cudautils::device::unique_ptr<uint8_t[]>> fedRawDataGPUAll(nStreams);
   for (int i=0; i<nStreams; i++) {
     sst_data_d[i] = (sst_data_t *)malloc(sizeof(sst_data_t));
     sst_data_d[i]->nStrips = sst_data[i]->nStrips;
     sst_data_d[i]->totalRawSize = sst_data[i]->totalRawSize;
-    //std::cout<<"Stream "<<i<<"totalRawSize "<<sst_data_d[i]->totalRawSize<<std::endl;
     clust_data_d[i] = (clust_data_t *)malloc(sizeof(clust_data_t));
-    chanlocsAllGPU.emplace_back(chanlocsAll[i].size(), stream[i]);
-    fedRawDataGPUAll[i] = cudautils::make_device_unique<uint8_t[]>(sst_data_d[i]->totalRawSize, stream[i]);
+    //chanlocsAllGPU.emplace_back(chanlocsAll[i].size(), stream[i]);
+    //fedRawDataGPUAll[i] = cudautils::make_device_unique<uint8_t[]>(sst_data_d[i]->totalRawSize, stream[i]);
   }
   calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
   std::unique_ptr<SiStripConditionsGPU, std::function<void(SiStripConditionsGPU*)>> condGPU(conditions->toGPU(), [](SiStripConditionsGPU* p) { cudaFree(p); });
@@ -135,9 +138,9 @@ int main()
 
       allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
-      //      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], chanlocsAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i]);
+      //unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i]);
       //cpySSTDataToGPU(sst_data[i], sst_data_d[i], gpu_timing[i], stream[i]);
-      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], chanlocsAll[i], chanlocsAllGPU[i], fedRawDataHostAll[i], fedRawDataGPUAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, modeAll[i], gpu_timing[i], stream[i]);
+      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, modeAll[i], gpu_timing[i], stream[i]);
 
       setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), gpu_timing[i], stream[i]);
 
@@ -164,7 +167,7 @@ int main()
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
-      //      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, mode, cpu_timing[i], stream[i]);
+      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, mode, cpu_timing[i], stream[i]);
 
       setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
 
@@ -225,19 +228,18 @@ int main()
 #endif
 
 #ifdef USE_GPU
-  chanlocsAllGPU.clear();
-  fedRawDataGPUAll.clear();
+  //chanlocsAllGPU.clear();
+  //fedRawDataGPUAll.clear();
   for (int i=0; i<nStreams; i++) {
     free(sst_data_d[i]);
     free(clust_data_d[i]);
     free(gpu_timing[i]);
   }
-  //freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
   free(calib_data_d);
 #endif
 
-  fedRawDataHostAll.clear();
-  chanlocsAll.clear();
+  //fedRawDataHostAll.clear();
+  //chanlocsAll.clear();
   for (int i=0; i<nStreams; i++) {
     freeSSTData(sst_data[i]);
     free(sst_data[i]);

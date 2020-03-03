@@ -35,7 +35,7 @@ ifeq ($(COMPILER), gnu)
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g \
 	  -I$(CUDA_PATH)/include -I$(CUBROOT) \
-        -DUSE_GPU -DCACHE_ALLOC -DNUMA_FT -DOUTPUT #-DACTIVE_STRIPS #-DCALIB_1D #-DOUTPUT -DCPU_DEBUG
+        -DUSE_GPU -DCACHE_ALLOC -DNUMA_FT #-DOUTPUT #-DACTIVE_STRIPS #-DCALIB_1D #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g
 endif
