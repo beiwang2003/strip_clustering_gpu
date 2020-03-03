@@ -367,7 +367,7 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
   sst_data_d->d_temp_storage=NULL;
   sst_data_d->temp_storage_bytes=0;
-  cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, sst_data_d->nStrips);
+  cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, max_strips);
 #ifdef GPU_DEBUG
   std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
 #endif
