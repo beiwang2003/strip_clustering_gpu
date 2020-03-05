@@ -93,6 +93,8 @@ int main()
     //fedRawDataHostAll[i] = cudautils::make_host_unique<uint8_t[]>(sst_data[i]->totalRawSize, stream[i]);
   }
 
+  double t0 = omp_get_wtime();
+
 #ifdef USE_GPU
   sst_data_t *sst_data_d[nStreams], *pt_sst_data_d[nStreams];
   calib_data_t *calib_data_d, *pt_calib_data_d;
@@ -108,7 +110,6 @@ int main()
     //fedRawDataGPUAll[i] = cudautils::make_device_unique<uint8_t[]>(sst_data_d[i]->totalRawSize, stream[i]);
   }
   calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
-  std::unique_ptr<SiStripConditionsGPU, std::function<void(SiStripConditionsGPU*)>> condGPU(conditions->toGPU(), [](SiStripConditionsGPU* p) { cudaFree(p); });
 
   gpu_timing_t *gpu_timing[nStreams];
   for (int i=0; i<nStreams; i++) {
@@ -121,12 +122,11 @@ int main()
   int gpu_device = 0;
   CUDA_RT_CALL(cudaSetDevice(gpu_device));
   CUDA_RT_CALL(cudaGetDevice(&gpu_device));
-#endif
 
-  double t0 = omp_get_wtime();
+  std::unique_ptr<SiStripConditionsGPU, std::function<void(SiStripConditionsGPU*)>> condGPU(conditions->toGPU(), [](SiStripConditionsGPU* p) { cudaFree(p); });
 
-#ifdef USE_GPU
   cudaProfilerStart();
+
 #ifdef CALIB_1D
   allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
   cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
@@ -167,7 +167,7 @@ int main()
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
-      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, mode, cpu_timing[i], stream[i]);
+      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i]);
 
       setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
 

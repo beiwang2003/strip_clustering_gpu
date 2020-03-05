@@ -658,6 +658,10 @@ extern "C"
 
   chanlocsGPU.reset(chanlocs, inputGPU, stream);
 
+#ifdef GPU_TIMER
+  gpu_timing->memTransHDTime += gpu_timer_measure(gpu_timing, stream);
+#endif
+
   constexpr int nthreads = 64;
   const auto channels = chanlocs.size();
   const auto nblocks = (channels + nthreads - 1)/nthreads;
@@ -806,18 +810,21 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
   gpu_timer_start(gpu_timing, stream);
 #endif
   CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nStrips), &(sst_data_d->nStrips), sizeof(int), cudaMemcpyHostToDevice, stream));
+#ifdef GPU_TIMER
+  gpu_timing->memTransHDTime += gpu_timer_measure(gpu_timing, stream);
+#endif
+
   //  cudaStreamSynchronize(stream);
   //mark seed strips
   setSeedStripsGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d, pt_calib_data_d, conditions);
   CUDA_RT_CALL(cudaGetLastError());
-
 #ifdef GPU_TIMER
   gpu_timing->setSeedStripsTime = gpu_timer_measure(gpu_timing, stream);
 #endif
+
   //mark only non-consecutive seed strips (mask out consecutive seed strips)
   setNCSeedStripsGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d);
   CUDA_RT_CALL(cudaGetLastError());
-
 #ifdef GPU_TIMER
   gpu_timing->setNCSeedStripsTime = gpu_timer_measure(gpu_timing, stream);
 #endif
@@ -825,9 +832,20 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
 
   cub::DeviceScan::ExclusiveSum(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, sst_data_d->seedStripsNCMask, sst_data_d->prefixSeedStripsNCMask, sst_data_d->nStrips, stream);
 
+#ifdef GPU_TIMER
+  gpu_timer_measure(gpu_timing, stream);
+#endif
+
   CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nSeedStripsNC), sst_data_d->prefixSeedStripsNCMask+sst_data_d->nStrips-1, sizeof(int), cudaMemcpyDeviceToDevice, stream));
+#ifdef GPU_TIMER
+  gpu_timing->memTransDHTime += gpu_timer_measure(gpu_timing, stream);
+#endif
 
   CUDA_RT_CALL(cudaMemcpyAsync((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost, stream));
+
+#ifdef GPU_TIMER
+  gpu_timing->memTransHDTime += gpu_timer_measure(gpu_timing, stream);
+#endif
 
 #ifdef GPU_DEBUG
   cudaStreamSynchronize(stream);
@@ -877,7 +895,7 @@ void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_
   int nSeedStripsNC = 150000;
   //std::cout<<"cpyGPUtoCPU Event="<<event<<"offset="<<offset<<"nSeedStripsNC="<<nSeedStripsNC<<std::endl;
 #ifdef GPU_TIMER
-  gpu_timer_start(gpu_timing, 0);
+  gpu_timer_start(gpu_timing, stream);
 #endif
   CUDA_RT_CALL(cudaMemcpyAsync((void *)(clust_data->clusterLastIndexLeft), clust_data_d->clusterLastIndexLeft, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream));
   CUDA_RT_CALL(cudaMemcpyAsync((void *)(clust_data->clusterLastIndexRight), clust_data_d->clusterLastIndexRight, nSeedStripsNC*sizeof(int), cudaMemcpyDeviceToHost, stream));
@@ -890,7 +908,7 @@ void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_
   //CUDA_RT_CALL(cudaStreamSynchronize(stream));
   //CUDA_RT_CALL(cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost));
 #ifdef GPU_TIMER
-  gpu_timing->memTransDHTime = gpu_timer_measure_end(gpu_timing, 0);
+  gpu_timing->memTransDHTime = gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
