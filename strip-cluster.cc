@@ -129,7 +129,8 @@ int main()
 
 #ifdef CALIB_1D
   allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
-  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
+  //  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
+  unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[0], fedBufferAll[0], fedIndexAll[0], sst_data_d[0], pt_sst_data_d[0], calib_data_d, pt_calib_data_d, modeAll[0], gpu_timing[0], stream[0], CALIB);
 #endif
 
   for (int iter=0; iter<nIter; iter++) {
@@ -138,9 +139,9 @@ int main()
 
       allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
-      //unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i]);
+      //unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i], SST);
       //cpySSTDataToGPU(sst_data[i], sst_data_d[i], gpu_timing[i], stream[i]);
-      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, modeAll[i], gpu_timing[i], stream[i]);
+      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, modeAll[i], gpu_timing[i], stream[i], SST);
 
       setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), gpu_timing[i], stream[i]);
 
@@ -163,11 +164,14 @@ int main()
   cudaProfilerStop();
 
 #else
-    for (int iter=0; iter<nIter; iter++) {
+#ifdef CALIB_1D
+  unpackRawData(conditions.get(), fedRawDataAll[0], fedBufferAll[0], fedIndexAll[0], sst_data[0], calib_data, modeAll[0], cpu_timing[0], stream[0], CALIB);
+#endif
+  for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
-      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i]);
+      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i], SST);
 
       setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
 

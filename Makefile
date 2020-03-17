@@ -35,7 +35,7 @@ ifeq ($(COMPILER), gnu)
 	CXXFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g \
 	  -I$(CUDA_PATH)/include -I$(CUBROOT) \
-        -DUSE_GPU -DCACHE_ALLOC -DNUMA_FT #-DOUTPUT #-DACTIVE_STRIPS #-DCALIB_1D #-DOUTPUT -DCPU_DEBUG
+        -DUSE_GPU -DCACHE_ALLOC -DNUMA_FT -DCALIB_1D #-DOUTPUT #-DACTIVE_STRIPS #-DCALIB_1D #-DOUTPUT -DCPU_DEBUG
 	LDFLAGS += -std=c++17 -O3 -fopenmp -march=native \
 	  -mprefer-vector-width=512 -fopt-info-vec -g
 endif
@@ -45,7 +45,7 @@ ifeq ($(COMPILER), intel)
 	CXXFLAGS += -std=c++17 -O3 -qopenmp -xHost \
 	  -qopt-zmm-usage=high -qopt-report=5 \
 	  -I$(CUDA_PATH)/include -I$(CUBROOT) -g \
-	  -DNUMA_FT #-DOUTPUT #-DOUTPUT #-DCALIB_1D #-DACTIVE_STRIPS -DCALIB_1D #-DOUTPUT -DCPU_DEBUG -DCPU_TIMER
+	  -DNUMA_FT -DCALIB_1D #-DOUTPUT #-DOUTPUT #-DCALIB_1D #-DACTIVE_STRIPS -DCALIB_1D #-DOUTPUT -DCPU_DEBUG -DCPU_TIMER
 	LDFLAGS += -std=c++17 -O3 -qopenmp -xHost \
 	  -qopt-zmm-usage=high -qopt-report=5 -g
 endif
@@ -53,7 +53,7 @@ endif
 NVCC = nvcc
 CUDAFLAGS += -std=c++14 -O3 -g --default-stream per-thread -arch=$(GPUARCH) \
  -I$(CUBROOT) --ptxas-options=-v -lineinfo --maxrregcount 32\
- -DCACHE_ALLOC #-DCOPY_ADC #-DGPU_DEBUG #-DGPU_TIMER #-DCOPY_ADC #-DGPU_TIMER #-DGPU_DEBUG #-DCALIB_1D #-DGPU_TIMER #-DCALIB_1D -DCOPY_ADC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
+ -DCACHE_ALLOC -DCALIB_1D #-DCOPY_ADC #-DGPU_DEBUG #-DGPU_TIMER #-DCOPY_ADC #-DGPU_TIMER #-DGPU_DEBUG #-DCALIB_1D #-DGPU_TIMER #-DCALIB_1D -DCOPY_ADC #-DGPU_TIMER #-DUSE_TEXTURE -DGPU_DEBUG -DCUB_STDERR
  # Note: -arch=sm_60 == -gencode=arch=compute_60,code=\"sm_60,compute_60\"
 CUDALDFLAGS += -lcudart -L$(CUDA_PATH)/lib64
 

@@ -142,7 +142,9 @@ void readin_raw_data(const std::string& datafilename, const SiStripConditions* c
     //std::cout << "Raw data size " << totalSize << " channel data size " << offset << std::endl;
     //alldata.resize(offset); // resize to the amount of data
 
-    unpack(chanlocs, conditions, sst_data, calib_data);
+    unpackSST(chanlocs, conditions, sst_data);
+
+    unpackCalib(chanlocs, conditions, calib_data);
 
 #ifdef CPU_DEBUG
     for (int i=0; i<sst_data->nStrips; i++) {
@@ -214,7 +216,7 @@ u      std::cout << "Event # " <<eventno<< " Reading FEDRawData ID " << fedId <<
   }
 }
 
-void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream) {
+void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream, SSTorCALIB unpack_option) {
 #ifdef CPU_TIMER
   double t0=omp_get_wtime();
 #endif
@@ -255,7 +257,14 @@ void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRaw
   assert(offset < MAX_STRIPS);
   //alldata.resize(offset); // resize to the amount of data
 
-  unpack(chanlocs, conditions, sst_data, calib_data);
+  if (unpack_option == SST)
+    unpackSST(chanlocs, conditions, sst_data);
+  else if (unpack_option == CALIB)
+    unpackCalib(chanlocs, conditions, calib_data);
+  else {
+    std::cout<<"other unpack option is not available"<<std::endl;
+    exit (2);
+  }
 
 #ifdef CPU_DEBUG
   for (int i=0; i<sst_data->nStrips; i++) {
@@ -269,7 +278,7 @@ void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRaw
 #endif
 }
 
-void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data) {
+void unpackSST(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data) {
 
 #pragma omp parallel for
   for (int chan=0; chan<chanlocs.size(); chan++) {
@@ -302,11 +311,6 @@ void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, ss
         const auto groupLength = sst_data->adc[aoff++];
 
         for (auto i = 0; i < groupLength; ++i) {
-#ifdef CALIB_1D
-          calib_data->noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
-          calib_data->gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
-          calib_data->bad[aoff]   = conditions->bad(fedid, fedch, stripIndex);
-#endif
 	  sst_data->fedId[aoff] = fedid;
 	  sst_data->fedCh[aoff] = fedch;
           sst_data->detId[aoff] = detid;
@@ -319,6 +323,37 @@ void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, ss
   }
 }
 
+void unpackCalib(const ChannelLocs& chanlocs, const SiStripConditions* conditions, calib_data_t *calib_data) {
+
+#pragma omp parallel for
+  for (int chan=0; chan<chanlocs.size(); chan++) {
+    const auto fedid = chanlocs.fedID(chan);
+    const auto fedch = chanlocs.fedCh(chan);
+    const auto detid = conditions->detID(fedid, fedch);
+    //if (chan==0) printf("0 fedId=%d fedCh=%d detid=%d\n", fedid, fedch, detid);
+    const auto ipoff = SiStripConditionsBase::kStripsPerChannel*conditions->iPair(fedid, fedch);
+
+    const auto data = chanlocs.input(chan);
+    const auto len = chanlocs.length(chan);
+
+    if (data != nullptr && len > 0) {
+      auto aoff = chanlocs.offset(chan);
+      auto choff = chanlocs.inoff(chan);
+      const auto end = aoff + len;
+
+      while (aoff < end) {
+        auto stripIndex = data[(choff++)^7] + ipoff;
+        const auto groupLength = data[(choff++)^7];
+	aoff=aoff+2;
+        for (auto i = 0; i < groupLength; ++i) {
+          calib_data->noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
+          calib_data->gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
+          calib_data->bad[aoff++]   = conditions->bad(fedid, fedch, stripIndex);
+        }
+      }
+    }
+  }
+}
 
 void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
 #ifdef USE_GPU

@@ -71,13 +71,7 @@ static float gpu_timer_measure_end(gpu_timing_t *gpu_timing, cudaStream_t stream
 }
 
 __global__
-static void unpackChannels(const ChanLocStruct* chanlocs, const SiStripConditionsGPU* conditions,
-			   sst_data_t *sst_data_d, calib_data_t *calib_data_d) {
-#ifdef CALIB_1D
-  float *__restrict__ noise = calib_data_d->noise;
-  float *__restrict__ gain = calib_data_d->gain;
-  bool *__restrict__ bad = calib_data_d->bad;
-#endif
+static void unpackChannelsSST(const ChanLocStruct* chanlocs, const SiStripConditionsGPU* conditions, sst_data_t *sst_data_d){
   uint8_t *__restrict__ adc = sst_data_d->adc;
   detId_t *__restrict__ detId = sst_data_d->detId;
   uint16_t *__restrict__ stripId = sst_data_d->stripId;
@@ -115,16 +109,50 @@ static void unpackChannels(const ChanLocStruct* chanlocs, const SiStripCondition
         const auto groupLength = adc[aoff++];
 
         for (auto i = 0; i < groupLength; ++i) {
-#ifdef CALIB_1D
-          noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
-          gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
-          bad[aoff]   = conditions->bad(fedid, fedch, stripIndex);
-#endif
 	  fedId[aoff] = fedid;
 	  fedCh[aoff] = fedch;
           detId[aoff] = detid;
           stripId[aoff] = stripIndex++;
           adc[aoff++] = data[(choff++)^7];
+        }
+      }
+    }
+  }
+}
+
+__global__
+static void unpackChannelsCalib(const ChanLocStruct* chanlocs, const SiStripConditionsGPU* conditions, calib_data_t *calib_data_d) {
+  float *__restrict__ noise = calib_data_d->noise;
+  float *__restrict__ gain = calib_data_d->gain;
+  bool *__restrict__ bad = calib_data_d->bad;
+
+  const int tid = threadIdx.x;
+  const int bid = blockIdx.x;
+  const int nthreads = blockDim.x;
+  const auto chan = nthreads*bid + tid;
+
+  if (chan < chanlocs->size()) {
+    const auto fedid = chanlocs->fedID(chan);
+    const auto fedch = chanlocs->fedCh(chan);
+    const auto detid = conditions->detID(fedid, fedch);
+    const auto ipoff = kStripsPerChannel*conditions->iPair(fedid, fedch);
+
+    const auto data = chanlocs->input(chan);
+    const auto len = chanlocs->length(chan);
+
+    if (data != nullptr && len > 0) {
+      auto aoff = chanlocs->offset(chan);
+      auto choff = chanlocs->inoff(chan);
+      const auto end = aoff + len;
+
+      while (aoff < end) {
+        auto stripIndex = data[(choff++)^7] + ipoff;
+	const auto groupLength = data[(choff++)^7];
+	aoff=aoff+2;
+        for (auto i = 0; i < groupLength; ++i) {
+          noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
+          gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
+          bad[aoff++]   = conditions->bad(fedid, fedch, stripIndex);
         }
       }
     }
@@ -226,15 +254,15 @@ static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib
   const int *__restrict__ seedStripsNCIndex = sst_data_d->seedStripsNCIndex;
   const int nSeedStripsNC = sst_data_d->nSeedStripsNC;
 #ifndef USE_TEXTURE
-#ifdef CALIB_1D
+  //#ifdef CALIB_1D
   const float *__restrict__ noise = calib_data_d->noise;
-#else
+  //#else
   const uint8_t *__restrict__ adc = sst_data_d->adc;
   const uint16_t *__restrict__ stripId = sst_data_d->stripId;
   const detId_t *__restrict__ detId = sst_data_d->detId;
   const fedId_t *__restrict__ fedId = sst_data_d->fedId;
   const fedCh_t *__restrict__ fedCh = sst_data_d->fedCh;
-#endif
+  //#endif
 #endif
   int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft;
   int *__restrict__ clusterLastIndexRight = clust_data_d->clusterLastIndexRight;
@@ -339,14 +367,14 @@ static void findLeftRightBoundaryGPU(sst_data_t *sst_data_d, calib_data_t *calib
 __global__
 static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib_data_d, const SiStripConditionsGPU *conditions, clust_data_t *clust_data_d) {
 #ifndef USE_TEXTURE
-#ifdef CALIB_1D
+  //#ifdef CALIB_1D
    const float *__restrict__ gain = calib_data_d->gain;
-#else
+   //#else
    const uint16_t *__restrict__ stripId = sst_data_d->stripId;
    const uint8_t *__restrict__ adc = sst_data_d->adc;
    const fedId_t *__restrict__ fedId = sst_data_d->fedId;
    const fedCh_t *__restrict__ fedCh = sst_data_d->fedCh;
-#endif
+   //#endif
 #endif
    const int nSeedStripsNC = sst_data_d->nSeedStripsNC;
    const int *__restrict__ clusterLastIndexLeft = clust_data_d->clusterLastIndexLeft;
@@ -588,7 +616,7 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d,
 }
 
 extern "C"
-  void unpackRawDataGPU(const SiStripConditions *conditions, const SiStripConditionsGPU *conditionsGPU, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, const FEDReadoutMode& mode, gpu_timing_t *gpu_timing, cudaStream_t stream) {
+  void unpackRawDataGPU(const SiStripConditions *conditions, const SiStripConditionsGPU *conditionsGPU, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, const FEDReadoutMode& mode, gpu_timing_t *gpu_timing, cudaStream_t stream, SSTorCALIB unpack_option) {
 
   ChannelLocs chanlocs(conditions->detToFeds().size(), stream);
   ChannelLocsGPU chanlocsGPU(chanlocs.size(), stream);
@@ -654,7 +682,8 @@ extern "C"
   sst_data_d->nStrips = offset;
   //std::cout<<"nStrips "<<offset<<std::endl;
 
-  CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nStrips), &(sst_data_d->nStrips), sizeof(int), cudaMemcpyHostToDevice, stream));
+  if (unpack_option == SST)
+    CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nStrips), &(sst_data_d->nStrips), sizeof(int), cudaMemcpyHostToDevice, stream));
 
   chanlocsGPU.reset(chanlocs, inputGPU, stream);
 
@@ -666,9 +695,15 @@ extern "C"
   const auto channels = chanlocs.size();
   const auto nblocks = (channels + nthreads - 1)/nthreads;
 
+  if (unpack_option == SST)
   //std::cout<<"total channels size "<<channels<<std::endl;
-  unpackChannels<<<nblocks, nthreads, 0, stream>>>(chanlocsGPU.chanLocStruct(), conditionsGPU, pt_sst_data_d, pt_calib_data_d);
-
+    unpackChannelsSST<<<nblocks, nthreads, 0, stream>>>(chanlocsGPU.chanLocStruct(), conditionsGPU, pt_sst_data_d);
+  else if (unpack_option == CALIB)
+    unpackChannelsCalib<<<nblocks, nthreads, 0, stream>>>(chanlocsGPU.chanLocStruct(), conditionsGPU, pt_calib_data_d);
+  else {
+    std::cout<<"other unpack option is not available"<<std::endl;
+    exit (2);
+  }
   //cudaStreamSynchronize(stream);
 
 #ifdef GPU_TIMER
