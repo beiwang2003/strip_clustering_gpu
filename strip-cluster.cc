@@ -17,7 +17,8 @@ int main()
   const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
   const int nIter = 840/nStreams;
-  //  const int nIter = 1;
+  //const int nIter = 840;
+  const int totalEvents = nIter*nStreams;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
   clust_data_t *clust_data[nStreams];
@@ -220,14 +221,14 @@ int main()
   std::cout<<" --setStripIndex kernel Time: "<<gpu_timing[0]->setStripIndexTime<<std::endl;
   std::cout<<" --findBoundary GPU Kernel Time: "<<gpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" --checkCluster GPU Kernel Time: "<<gpu_timing[0]->checkClusterTime<<std::endl;
-  std::cout<<" Total Time (including data allocation, transfer and kernel cost): "<<t1-t0<<std::endl;
+  std::cout<<" Total Time (including data allocation, transfer and kernel cost): "<<t1-t0<<" Throughput: "<<totalEvents/(t1-t0)<<std::endl;
 #else
   std::cout<<" setSeedStrips function Time: "<<cpu_timing[0]->setSeedStripsTime<<std::endl;
   std::cout<<" setNCSeedStrips function Time: "<<cpu_timing[0]->setNCSeedStripsTime<<std::endl;
   std::cout<<" setStripIndex function Time: "<<cpu_timing[0]->setStripIndexTime<<std::endl;
   std::cout<<" findBoundary function Time: "<<cpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" checkCluster function Time: "<<cpu_timing[0]->checkClusterTime<<std::endl;
-  std::cout<<" Total Time: "<<t1-t0<<std::endl;
+  std::cout<<" Total Time: "<<t1-t0<<" Throughput: "<<totalEvents/(t1-t0)<<std::endl;
   //  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
 #endif
 
