@@ -17,19 +17,19 @@ int main()
   const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
   const int nIter = 840/nStreams;
-  //const int nIter = 840;
   const int totalEvents = nIter*nStreams;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
   clust_data_t *clust_data[nStreams];
+  calib_data_t *calib_data[nStreams];
   cpu_timing_t *cpu_timing[nStreams];
   for (int i=0; i<nStreams; i++) {
     CUDA_RT_CALL(cudaStreamCreate(&stream[i]));
     sst_data[i] = (sst_data_t *)malloc(sizeof(sst_data_t));
     clust_data[i] = (clust_data_t *)malloc(sizeof(clust_data_t));
+    calib_data[i] = (calib_data_t *)malloc(sizeof(calib_data_t));
     cpu_timing[i] = (cpu_timing_t *)malloc(sizeof(cpu_timing_t));
   }
-  calib_data_t *calib_data = (calib_data_t *)malloc(sizeof(calib_data_t));
 
   // memory allocation
 #ifdef NUMA_FT
@@ -39,19 +39,8 @@ int main()
     //    print_binding_info();
     allocateSSTData(max_strips, sst_data[i], stream[i]);
     allocateClustData(max_seedstrips, clust_data[i], stream[i]);
+    allocateCalibData(max_strips, calib_data[i], stream[i]);
   }
-
-#ifdef NUMA_FT
-#pragma omp parallel num_threads(nStreams)
-  {
-#pragma omp single
-    {
-#endif
-      allocateCalibData(max_strips, calib_data);
-#ifdef NUMA_FT
-    }
-  }
-#endif
 
   // read in calibration data (only once)
   std::string condfilename("stripcond.bin");
@@ -63,12 +52,12 @@ int main()
   //#else
   //std::string digifilename("digidata_all.bin");
   //#endif
-  //readin_raw_digidata(digifilename, conditions.get(), sst_data[0], calib_data);
+  //readin_raw_digidata(digifilename, conditions.get(), sst_data[0], calib_data[0]);
 
   // option 2: read in raw data and convert to strip info
   /*
   std::string datafilename("stripdata.bin");
-  readin_raw_data(datafilename, conditions.get(), sst_data[0], calib_data, stream[0]);
+  readin_raw_data(datafilename, conditions.get(), sst_data[0], calib_data[0], stream[0]);
   // copy data to other streams
   for (int i=1; i<nStreams; i++) {
     std::memcpy(sst_data[i]->detId, sst_data[0]->detId, sizeof(detId_t)*sst_data[0]->nStrips);
@@ -77,6 +66,9 @@ int main()
     std::memcpy(sst_data[i]->fedCh, sst_data[0]->fedCh, sizeof(fedCh_t)*sst_data[0]->nStrips);
     std::memcpy(sst_data[i]->adc, sst_data[0]->adc, sizeof(uint8_t)*sst_data[0]->nStrips);
     sst_data[i]->nStrips = sst_data[0]->nStrips;
+    std::memcpy(calib_data[i]->noise, calib_data[0]->noise, sizeof(float)*sst_data[0]->nStrips);
+    std::memcpy(calib_data[i]->gain, calib_data[0]->gain, sizeof(float)*sst_data[0]->nStrips);
+    std::memcpy(calib_data[i]->bad, calib_data[0]->bad, sizeof(bool)*sst_data[0]->nStrips);
   }
   */
 
@@ -98,7 +90,7 @@ int main()
 
 #ifdef USE_GPU
   sst_data_t *sst_data_d[nStreams], *pt_sst_data_d[nStreams];
-  calib_data_t *calib_data_d, *pt_calib_data_d;
+  calib_data_t *calib_data_d[nStreams], *pt_calib_data_d[nStreams];
   clust_data_t *clust_data_d[nStreams], *pt_clust_data_d[nStreams];
   //std::vector<ChannelLocsGPU> chanlocsAllGPU;
   //std::vector<cudautils::device::unique_ptr<uint8_t[]>> fedRawDataGPUAll(nStreams);
@@ -107,10 +99,10 @@ int main()
     sst_data_d[i]->nStrips = sst_data[i]->nStrips;
     sst_data_d[i]->totalRawSize = sst_data[i]->totalRawSize;
     clust_data_d[i] = (clust_data_t *)malloc(sizeof(clust_data_t));
+    calib_data_d[i] = (calib_data_t *)malloc(sizeof(calib_data_t));
     //chanlocsAllGPU.emplace_back(chanlocsAll[i].size(), stream[i]);
     //fedRawDataGPUAll[i] = cudautils::make_device_unique<uint8_t[]>(sst_data_d[i]->totalRawSize, stream[i]);
   }
-  calib_data_d = (calib_data_t *)malloc(sizeof(calib_data_t));
 
   gpu_timing_t *gpu_timing[nStreams];
   for (int i=0; i<nStreams; i++) {
@@ -128,55 +120,50 @@ int main()
 
   cudaProfilerStart();
 
-#ifdef CALIB_1D
-  allocateCalibDataGPU(max_strips, calib_data_d, &pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
-  //  cpyCalibDataToGPU(max_strips, calib_data, calib_data_d, gpu_timing[0], stream[0]);
-  unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[0], fedBufferAll[0], fedIndexAll[0], sst_data_d[0], pt_sst_data_d[0], calib_data_d, pt_calib_data_d, modeAll[0], gpu_timing[0], stream[0], CALIB);
-#endif
-
   for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
+#ifdef CALIB_1D
+      allocateCalibDataGPU(max_strips, calib_data_d[i], &pt_calib_data_d[i], gpu_timing[i], gpu_device, stream[i]);
+#endif
 
       allocateSSTDataGPU(max_strips, sst_data_d[i], &pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
-      //unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i], SST);
+      //unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data[i], modeAll[i], cpu_timing[i], stream[i]);
       //cpySSTDataToGPU(sst_data[i], sst_data_d[i], gpu_timing[i], stream[i]);
-      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, modeAll[i], gpu_timing[i], stream[i], SST);
+      //cpyCalibDataToGPU(calib_data[i], calib_data_d[i], gpu_timing[i], stream[i]);
+      unpackRawDataGPU(conditions.get(), condGPU.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data_d[i], pt_sst_data_d[i], calib_data_d[i], pt_calib_data_d[i], modeAll[i], gpu_timing[i], stream[i]);
 
-      setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), gpu_timing[i], stream[i]);
+      setSeedStripsNCIndexGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d[i], pt_calib_data_d[i], condGPU.get(), gpu_timing[i], stream[i]);
 
       allocateClustDataGPU(max_seedstrips, clust_data_d[i], &pt_clust_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
-      findClusterGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d, pt_calib_data_d, condGPU.get(), clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], stream[i]);
+      findClusterGPU(sst_data_d[i], pt_sst_data_d[i], calib_data_d[i], pt_calib_data_d[i], condGPU.get(), clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], stream[i]);
 
       cpyGPUToCPU(sst_data_d[i], pt_sst_data_d[i], clust_data[i], clust_data_d[i], gpu_timing[i], stream[i]);
 
       freeClustDataGPU(clust_data_d[i], pt_clust_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 
       freeSSTDataGPU(sst_data_d[i], pt_sst_data_d[i], gpu_timing[i], gpu_device, stream[i]);
-    }
-  }
 
 #ifdef CALIB_1D
-  freeCalibDataGPU(calib_data_d, pt_calib_data_d, gpu_timing[0], gpu_device, stream[0]);
+      freeCalibDataGPU(calib_data_d[i], pt_calib_data_d[i], gpu_timing[i], gpu_device, stream[i]);
 #endif
+    }
+  }
 
   cudaProfilerStop();
 
 #else
-#ifdef CALIB_1D
-  unpackRawData(conditions.get(), fedRawDataAll[0], fedBufferAll[0], fedIndexAll[0], sst_data[0], calib_data, modeAll[0], cpu_timing[0], stream[0], CALIB);
-#endif
   for (int iter=0; iter<nIter; iter++) {
 #pragma omp parallel for num_threads(nStreams)
     for (int i=0; i<nStreams; i++) {
 
-      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data, modeAll[i], cpu_timing[i], stream[i], SST);
+      unpackRawData(conditions.get(), fedRawDataAll[i], fedBufferAll[i], fedIndexAll[i], sst_data[i], calib_data[i], modeAll[i], cpu_timing[i], stream[i]);
 
-      setSeedStripsNCIndex(sst_data[i], calib_data, conditions.get(), cpu_timing[i]);
+      setSeedStripsNCIndex(sst_data[i], calib_data[i], conditions.get(), cpu_timing[i]);
 
-      findCluster(sst_data[i], calib_data, conditions.get(), clust_data[i], cpu_timing[i]);
+      findCluster(sst_data[i], calib_data[i], conditions.get(), clust_data[i], cpu_timing[i]);
     }
   }
 #endif
@@ -238,9 +225,9 @@ int main()
   for (int i=0; i<nStreams; i++) {
     free(sst_data_d[i]);
     free(clust_data_d[i]);
+    free(calib_data_d[i]);
     free(gpu_timing[i]);
   }
-  free(calib_data_d);
 #endif
 
   //fedRawDataHostAll.clear();
@@ -250,11 +237,11 @@ int main()
     free(sst_data[i]);
     freeClustData(clust_data[i]);
     free(clust_data[i]);
+    freeCalibData(calib_data[i]);
+    free(calib_data[i]);
     free(cpu_timing[i]);
     CUDA_RT_CALL(cudaStreamDestroy(stream[i]));
   }
-  freeCalibData(calib_data);
-  free(calib_data);
 
   return 0;
 

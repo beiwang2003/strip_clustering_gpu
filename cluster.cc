@@ -142,9 +142,7 @@ void readin_raw_data(const std::string& datafilename, const SiStripConditions* c
     //std::cout << "Raw data size " << totalSize << " channel data size " << offset << std::endl;
     //alldata.resize(offset); // resize to the amount of data
 
-    unpackSST(chanlocs, conditions, sst_data);
-
-    unpackCalib(chanlocs, conditions, calib_data);
+    unpack(chanlocs, conditions, sst_data, calib_data);
 
 #ifdef CPU_DEBUG
     for (int i=0; i<sst_data->nStrips; i++) {
@@ -156,8 +154,6 @@ void readin_raw_data(const std::string& datafilename, const SiStripConditions* c
 }
 
 void readinRawData(const std::string& datafilename, const SiStripConditions *conditions, std::vector<FEDRawData>& fedRawDatav, std::vector<FEDBuffer>& fedBufferv, std::vector<fedId_t>& fedIndex, FEDReadoutMode& mode, sst_data_t* sst_data) {
-  //void readin_raw_data(const std::string& datafilename, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data, cudaStream_t stream) {
-
   std::ifstream datafile(datafilename, std::ios::in | std::ios::binary);
   datafile.seekg(sizeof(size_t)); // skip initial event mark
 
@@ -216,7 +212,7 @@ u      std::cout << "Event # " <<eventno<< " Reading FEDRawData ID " << fedId <<
   }
 }
 
-void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream, SSTorCALIB unpack_option) {
+void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRawData>& fedRawDatav, const std::vector<FEDBuffer>& fedBufferv, const std::vector<fedId_t>& fedIndex, sst_data_t *sst_data, calib_data_t *calib_data, const FEDReadoutMode& mode, cpu_timing_t *cpu_timing, cudaStream_t stream) {
 #ifdef CPU_TIMER
   double t0=omp_get_wtime();
 #endif
@@ -257,14 +253,7 @@ void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRaw
   assert(offset < MAX_STRIPS);
   //alldata.resize(offset); // resize to the amount of data
 
-  if (unpack_option == SST)
-    unpackSST(chanlocs, conditions, sst_data);
-  else if (unpack_option == CALIB)
-    unpackCalib(chanlocs, conditions, calib_data);
-  else {
-    std::cout<<"other unpack option is not available"<<std::endl;
-    exit (2);
-  }
+  unpack(chanlocs, conditions, sst_data, calib_data);
 
 #ifdef CPU_DEBUG
   for (int i=0; i<sst_data->nStrips; i++) {
@@ -278,7 +267,7 @@ void unpackRawData(const SiStripConditions *conditions, const std::vector<FEDRaw
 #endif
 }
 
-void unpackSST(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data) {
+void unpack(const ChannelLocs& chanlocs, const SiStripConditions* conditions, sst_data_t *sst_data, calib_data_t *calib_data) {
 
 #pragma omp parallel for
   for (int chan=0; chan<chanlocs.size(); chan++) {
@@ -311,44 +300,17 @@ void unpackSST(const ChannelLocs& chanlocs, const SiStripConditions* conditions,
         const auto groupLength = sst_data->adc[aoff++];
 
         for (auto i = 0; i < groupLength; ++i) {
+#ifdef CALIB_1D
+          calib_data->noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
+          calib_data->gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
+          calib_data->bad[aoff]   = conditions->bad(fedid, fedch, stripIndex);
+#endif
 	  sst_data->fedId[aoff] = fedid;
 	  sst_data->fedCh[aoff] = fedch;
           sst_data->detId[aoff] = detid;
           sst_data->stripId[aoff] = stripIndex++;
 	  //if (chan==0) printf("3 stripId=%d detId=%d\n", sst_data->stripId[aoff], sst_data->detId[aoff]);
           sst_data->adc[aoff++] = data[(choff++)^7];
-        }
-      }
-    }
-  }
-}
-
-void unpackCalib(const ChannelLocs& chanlocs, const SiStripConditions* conditions, calib_data_t *calib_data) {
-
-#pragma omp parallel for
-  for (int chan=0; chan<chanlocs.size(); chan++) {
-    const auto fedid = chanlocs.fedID(chan);
-    const auto fedch = chanlocs.fedCh(chan);
-    const auto detid = conditions->detID(fedid, fedch);
-    //if (chan==0) printf("0 fedId=%d fedCh=%d detid=%d\n", fedid, fedch, detid);
-    const auto ipoff = SiStripConditionsBase::kStripsPerChannel*conditions->iPair(fedid, fedch);
-
-    const auto data = chanlocs.input(chan);
-    const auto len = chanlocs.length(chan);
-
-    if (data != nullptr && len > 0) {
-      auto aoff = chanlocs.offset(chan);
-      auto choff = chanlocs.inoff(chan);
-      const auto end = aoff + len;
-
-      while (aoff < end) {
-        auto stripIndex = data[(choff++)^7] + ipoff;
-        const auto groupLength = data[(choff++)^7];
-	aoff=aoff+2;
-        for (auto i = 0; i < groupLength; ++i) {
-          calib_data->noise[aoff] = conditions->noise(fedid, fedch, stripIndex);
-          calib_data->gain[aoff]  = conditions->gain(fedid, fedch, stripIndex);
-          calib_data->bad[aoff++]   = conditions->bad(fedid, fedch, stripIndex);
         }
       }
     }
@@ -405,7 +367,18 @@ void allocateSSTData(int max_strips, sst_data_t *sst_data, cudaStream_t stream){
 #endif
 }
 
-void allocateCalibData(int max_strips, calib_data_t *calib_data){
+void allocateCalibData(int max_strips, calib_data_t *calib_data, cudaStream_t stream){
+#ifdef USE_GPU
+#ifdef CACHE_ALLOC
+  calib_data->noise = (float *)cudautils::allocate_host(2*max_strips*sizeof(float), stream);
+  calib_data->gain = calib_data->noise + max_strips;
+  calib_data->bad = (bool *)cudautils::allocate_host(max_strips*sizeof(bool), stream);
+#else
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(calib_data->noise), 2*max_strips*sizeof(float), cudaHostAllocDefault));
+  calib_data->gain = calib_data->noise + max_strips;
+  CUDA_RT_CALL(cudaHostAlloc((void **)&(calib_data->bad), max_strips*sizeof(bool), cudaHostAllocDefault));
+#endif
+#else
   calib_data->noise = (float *)_mm_malloc(2*max_strips*sizeof(float), IDEAL_ALIGNMENT);
   calib_data->gain = calib_data->noise + max_strips;
   calib_data->bad = (bool *)_mm_malloc(max_strips*sizeof(bool), IDEAL_ALIGNMENT);
@@ -416,6 +389,7 @@ void allocateCalibData(int max_strips, calib_data_t *calib_data){
     calib_data->gain[i] = 0.0;
     calib_data->bad[i] = false;
   }
+#endif
 #endif
 }
 
@@ -486,8 +460,18 @@ void freeSSTData(sst_data_t *sst_data) {
 }
 
 void freeCalibData(calib_data_t *calib_data) {
+#ifdef USE_GPU
+#ifdef CACHE_ALLOC
+  cudautils::free_host(calib_data->noise);
+  cudautils::free_host(calib_data->bad);
+#else
+  CUDA_RT_CALL(cudaFreeHost(calib_data->noise));
+  CUDA_RT_CALL(cudaFreeHost(calib_data->bad));
+#endif
+#else
   free(calib_data->noise);
   free(calib_data->bad);
+#endif
 }
 
 void freeClustData(clust_data_t *clust_data) {
