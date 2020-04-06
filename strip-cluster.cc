@@ -17,6 +17,7 @@ int main()
   const int max_seedstrips = MAX_SEEDSTRIPS;
   const int nStreams = omp_get_max_threads();
   const int nIter = 840/nStreams;
+  //  const int nIter = 840;
   const int totalEvents = nIter*nStreams;
   cudaStream_t stream[nStreams];
   sst_data_t *sst_data[nStreams];
@@ -152,6 +153,10 @@ int main()
     }
   }
 
+#ifdef USE_GPU
+  CUDA_RT_CALL(cudaDeviceSynchronize());
+#endif
+
   cudaProfilerStop();
 
 #else
@@ -170,11 +175,8 @@ int main()
 
   double t1 = omp_get_wtime();
 
-#ifdef OUTPUT
-#ifdef USE_GPU
-  CUDA_RT_CALL(cudaDeviceSynchronize());
-#endif
   // print out the result
+#ifdef OUTPUT
   for (int i=0; i<nStreams; i++) {
 #ifdef USE_GPU
     sst_data[i]->nSeedStripsNC = sst_data_d[i]->nSeedStripsNC;
@@ -216,7 +218,7 @@ int main()
   std::cout<<" findBoundary function Time: "<<cpu_timing[0]->findBoundaryTime<<std::endl;
   std::cout<<" checkCluster function Time: "<<cpu_timing[0]->checkClusterTime<<std::endl;
   std::cout<<" Total Time: "<<t1-t0<<" Throughput: "<<totalEvents/(t1-t0)<<std::endl;
-  //  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
+  std::cout<<"nested? "<<omp_get_nested()<<std::endl;
 #endif
 
 #ifdef USE_GPU
