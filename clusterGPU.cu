@@ -448,7 +448,6 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice, stream));
 
 #ifdef GPU_TIMER
-  gpu_timing->memAllocTime = 0;
   gpu_timing->memAllocTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
@@ -541,7 +540,6 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d,
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
-
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_calib_data_d);
   cudautils::free_device(dev, calib_data_d->noise);
@@ -579,7 +577,6 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d,
   CUDA_RT_CALL(cudaFree(clust_data_d->barycenter));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memFreeTime = 0;
   gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
@@ -611,7 +608,7 @@ extern "C"
 #endif
   cudautils::copyAsync(fedRawDataGPU, fedRawDataHost, sst_data_d->totalRawSize, stream);
 #ifdef GPU_TIMER
-  gpu_timing->memTransHDTime += gpu_timer_measure(gpu_timing, stream);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 
   const auto& detmap = conditions->detToFeds();
@@ -650,6 +647,9 @@ extern "C"
 
   sst_data_d->nStrips = offset;
   //std::cout<<"nStrips "<<offset<<std::endl;
+#ifdef GPU_TIMER
+  gpu_timer_start(gpu_timing, stream);
+#endif
 
   CUDA_RT_CALL(cudaMemcpyAsync((void *)&(pt_sst_data_d->nStrips), &(sst_data_d->nStrips), sizeof(int), cudaMemcpyHostToDevice, stream));
 
@@ -667,7 +667,7 @@ extern "C"
   //cudaStreamSynchronize(stream);
 
 #ifdef GPU_TIMER
-  gpu_timing->unpackRawDataTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->unpackRawDataTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 
 #ifdef GPU_DEBUG
@@ -729,14 +729,14 @@ void findClusterGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, calib_dat
   CUDA_RT_CALL(cudaGetLastError());
 
 #ifdef GPU_TIMER
-  gpu_timing->findBoundaryTime = gpu_timer_measure(gpu_timing, stream);
+  gpu_timing->findBoundaryTime += gpu_timer_measure(gpu_timing, stream);
 #endif
 
   checkClusterConditionGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d, pt_calib_data_d, conditions, pt_clust_data_d);
   CUDA_RT_CALL(cudaGetLastError());
 
 #ifdef GPU_TIMER
-  gpu_timing->checkClusterTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->checkClusterTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 
 #ifdef GPU_DEBUG
@@ -814,14 +814,14 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
   setSeedStripsGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d, pt_calib_data_d, conditions);
   CUDA_RT_CALL(cudaGetLastError());
 #ifdef GPU_TIMER
-  gpu_timing->setSeedStripsTime = gpu_timer_measure(gpu_timing, stream);
+  gpu_timing->setSeedStripsTime += gpu_timer_measure(gpu_timing, stream);
 #endif
 
   //mark only non-consecutive seed strips (mask out consecutive seed strips)
   setNCSeedStripsGPU<<<nblocks, nthreads, 0, stream>>>(pt_sst_data_d);
   CUDA_RT_CALL(cudaGetLastError());
 #ifdef GPU_TIMER
-  gpu_timing->setNCSeedStripsTime = gpu_timer_measure(gpu_timing, stream);
+  gpu_timing->setNCSeedStripsTime += gpu_timer_measure(gpu_timing, stream);
 #endif
   //std::cout<<"nStrip in setStripIndexGPU is="<<sst_data_d->nStrips<<std::endl;
 
@@ -854,7 +854,7 @@ void setSeedStripsNCIndexGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, 
   CUDA_RT_CALL(cudaGetLastError());
 
 #ifdef GPU_TIMER
-  gpu_timing->setStripIndexTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->setStripIndexTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 
 #ifdef GPU_DEBUG
@@ -903,7 +903,7 @@ void cpyGPUToCPU(sst_data_t * sst_data_d, sst_data_t *pt_sst_data_d, clust_data_
   //CUDA_RT_CALL(cudaStreamSynchronize(stream));
   //CUDA_RT_CALL(cudaMemcpy((void *)&(sst_data_d->nSeedStripsNC), &(pt_sst_data_d->nSeedStripsNC), sizeof(int), cudaMemcpyDeviceToHost));
 #ifdef GPU_TIMER
-  gpu_timing->memTransDHTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->memTransDHTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
@@ -919,7 +919,7 @@ void cpyCalibDataToGPU(int max_strips, calib_data_t *calib_data, calib_data_t *c
   cudaBindTexture(0, gainTexRef, (void *)calib_data_d->gain, max_strips*sizeof(float));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransHDTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
 
@@ -942,6 +942,6 @@ void cpySSTDataToGPU(sst_data_t *sst_data, sst_data_t *sst_data_d, gpu_timing_t 
   cudaBindTexture(0, adcTexRef, (void *)sst_data_d->adc, nStrips*sizeof(uint8_t));
 #endif
 #ifdef GPU_TIMER
-  gpu_timing->memTransHDTime = gpu_timer_measure_end(gpu_timing, stream);
+  gpu_timing->memTransHDTime += gpu_timer_measure_end(gpu_timing, stream);
 #endif
 }
