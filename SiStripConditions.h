@@ -36,7 +36,7 @@ using DetToFeds = std::vector<DetToFed>;
 class ChannelConditions {
 public:
   static constexpr int kStripsPerChannel = 256;
-  
+
   ChannelConditions(detId_t det, uint16_t pair, const float* noise, const float* gain, const bool* bad)
     : detId_(det), ipair_(pair), noise_(noise), gain_(gain), bad_(bad) {}
 
