@@ -6,6 +6,15 @@
 #include "allocate_device.h"
 #endif
 #include "copyAsync.h"
+/*
+#ifdef RMM
+#include <rmm/cuda_stream_view.hpp>
+#include <rmm/mr/device/cuda_memory_resource.hpp>
+#include <rmm/mr/device/per_device_resource.hpp>
+#include <rmm/mr/device/pool_memory_resource.hpp>
+#include <rmm/mr/device/binning_memory_resource.hpp>
+#endif
+*/
 
 constexpr auto kStripsPerChannel = SiStripConditionsBase::kStripsPerChannel;
 
@@ -405,11 +414,11 @@ static void checkClusterConditionGPU(sst_data_t *sst_data_d, calib_data_t *calib
 }
 
 extern "C"
-void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t* gpu_timing,  int dev, cudaStream_t stream) {
+void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_sst_data_d, gpu_timing_t* gpu_timing,  int dev, cudaStream_t stream, rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
-
+#ifndef RMM
 #ifdef CACHE_ALLOC
   *pt_sst_data_d = (sst_data_t *)cudautils::allocate_device(dev, sizeof(sst_data_t), stream);
   sst_data_d->detId = (detId_t*)cudautils::allocate_device(dev, max_strips*sizeof(detId_t), stream);
@@ -429,6 +438,23 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->seedStripsMask), 2*max_strips*sizeof(int)));
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->prefixSeedStripsNCMask), 2*max_strips*sizeof(int)));
 #endif
+#else
+  rmm::cuda_stream_view stream_view(stream);
+  /*
+  rmm::mr::cuda_memory_resource cuda_mr;
+  rmm::mr::binning_memory_resource<rmm::mr::cuda_memory_resource> bin_mr{&cuda_mr};
+  rmm::mr::set_current_device_resource(&bin_mr); // Updates the current device resource pointer to `pool_mr`
+  rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource(); // Points to `pool_mr`*/
+
+  *pt_sst_data_d = (sst_data_t *)mr->allocate(sizeof(sst_data_t), stream_view);
+  sst_data_d->detId = (detId_t*)mr->allocate(max_strips*sizeof(detId_t), stream_view);
+  sst_data_d->stripId = (uint16_t *)mr->allocate(max_strips*sizeof(uint16_t), stream_view);
+  sst_data_d->adc = (uint8_t *)mr->allocate(max_strips*sizeof(uint8_t), stream_view);
+  sst_data_d->fedId = (fedId_t *)mr->allocate(max_strips*sizeof(fedId_t), stream_view);
+  sst_data_d->fedCh = (fedCh_t *)mr->allocate(max_strips*sizeof(fedCh_t), stream_view);
+  sst_data_d->seedStripsMask = (int *)mr->allocate(2*max_strips*sizeof(int), stream_view);
+  sst_data_d->prefixSeedStripsNCMask = (int *)mr->allocate(2*max_strips*sizeof(int), stream_view);
+#endif
 
   sst_data_d->seedStripsNCMask = sst_data_d->seedStripsMask + max_strips;
   sst_data_d->seedStripsNCIndex = sst_data_d->prefixSeedStripsNCMask + max_strips;
@@ -439,12 +465,15 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
   std::cout<<"temp_storage_bytes="<<sst_data_d->temp_storage_bytes<<std::endl;
 #endif
 
+#ifndef RMM
 #ifdef CACHE_ALLOC
   sst_data_d->d_temp_storage = cudautils::allocate_device(dev, sst_data_d->temp_storage_bytes, stream);
 #else
   CUDA_RT_CALL(cudaMalloc((void **)&(sst_data_d->d_temp_storage), sst_data_d->temp_storage_bytes));
 #endif // end CACHE_ALLOC
-
+#else
+  sst_data_d->d_temp_storage = (void *)mr->allocate(sst_data_d->temp_storage_bytes, stream_view);
+#endif
   CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_sst_data_d, sst_data_d, sizeof(sst_data_t), cudaMemcpyHostToDevice, stream));
 
 #ifdef GPU_TIMER
@@ -453,11 +482,12 @@ void allocateSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t **pt_
 }
 
 extern "C"
-void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing, int dev, cudaStream_t stream) {
+void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t **pt_calib_data_d, gpu_timing_t* gpu_timing, int dev, cudaStream_t stream, rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
 
+#ifndef RMM
 #ifdef CACHE_ALLOC
   *pt_calib_data_d = (calib_data_t *)cudautils::allocate_device(dev, sizeof(calib_data_t), stream);
   calib_data_d->noise = (float *)cudautils::allocate_device(dev, 2*max_strips*sizeof(float), stream);
@@ -467,6 +497,13 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
   CUDA_RT_CALL(cudaMalloc((void **)&(calib_data_d->noise), 2*max_strips*sizeof(float)));
   CUDA_RT_CALL(cudaMalloc((void **)&(calib_data_d->bad), max_strips*sizeof(bool)));
 #endif
+#else
+  rmm::cuda_stream_view stream_view(stream);
+  *pt_calib_data_d = (calib_data_t *)mr->allocate(sizeof(calib_data_t), stream_view);
+  calib_data_d->noise = (float *)mr->allocate(2*max_strips*sizeof(float), stream_view);
+  calib_data_d->bad = (bool *)mr->allocate(max_strips*sizeof(bool), stream_view);
+#endif
+
   calib_data_d->gain = calib_data_d->noise + max_strips;
   CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_calib_data_d, calib_data_d, sizeof(calib_data_t), cudaMemcpyHostToDevice, stream));
 #ifdef GPU_TIMER
@@ -475,11 +512,12 @@ void allocateCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data
 }
 
 extern "C"
-  void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+void allocateClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t **pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream, rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
 
+#ifndef RMM
 #ifdef CACHE_ALLOC
   *pt_clust_data_d = (clust_data_t *)cudautils::allocate_device(dev, sizeof(clust_data_t), stream);
   clust_data_d->clusterLastIndexLeft = (int *)cudautils::allocate_device(dev, 2*max_strips*sizeof(int), stream);
@@ -493,6 +531,15 @@ extern "C"
   CUDA_RT_CALL(cudaMalloc((void **)&(clust_data_d->trueCluster), max_strips*sizeof(bool)));
   CUDA_RT_CALL(cudaMalloc((void **)&(clust_data_d->barycenter), max_strips*sizeof(float)));
 #endif
+#else
+  rmm::cuda_stream_view stream_view(stream);
+  *pt_clust_data_d = (clust_data_t *)mr->allocate(sizeof(clust_data_t), stream_view);
+  clust_data_d->clusterLastIndexLeft = (int *)mr->allocate(2*max_strips*sizeof(int), stream_view);
+  clust_data_d->clusterADCs = (uint8_t *)mr->allocate(max_strips*256*sizeof(uint8_t), stream_view);
+  clust_data_d->trueCluster = (bool *)mr->allocate(max_strips*sizeof(bool), stream_view);
+  clust_data_d->barycenter = (float *)mr->allocate(max_strips*sizeof(float), stream_view);
+#endif
+
   clust_data_d->clusterLastIndexRight = clust_data_d->clusterLastIndexLeft + max_strips;
   CUDA_RT_CALL(cudaMemcpyAsync((void *)*pt_clust_data_d, clust_data_d, sizeof(clust_data_t), cudaMemcpyHostToDevice, stream));
 
@@ -502,11 +549,12 @@ extern "C"
 }
 
 extern "C"
-void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+void freeSSTDataGPU(int max_strips, sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream,  rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
 
+#ifndef RMM
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_sst_data_d);
   cudautils::free_device(dev, sst_data_d->detId);
@@ -516,15 +564,36 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timin
   cudautils::free_device(dev, sst_data_d->fedCh);
   cudautils::free_device(dev, sst_data_d->seedStripsMask);
   cudautils::free_device(dev, sst_data_d->prefixSeedStripsNCMask);
+  cudautils::free_device(dev, sst_data_d->d_temp_storage);
 #else
   CUDA_RT_CALL(cudaFree(pt_sst_data_d));
   CUDA_RT_CALL(cudaFree(sst_data_d->detId));
   CUDA_RT_CALL(cudaFree(sst_data_d->stripId));
-  CUDA_RT_CALL(cudaFree(sst_data_d->adc);
+  CUDA_RT_CALL(cudaFree(sst_data_d->adc));
   CUDA_RT_CALL(cudaFree(sst_data_d->fedId));
   CUDA_RT_CALL(cudaFree(sst_data_d->fedCh));
   CUDA_RT_CALL(cudaFree(sst_data_d->seedStripsMask));
   CUDA_RT_CALL(cudaFree(sst_data_d->prefixSeedStripsNCMask));
+  CUDA_RT_CALL(cudaFree(sst_data_d->d_temp_storage));
+#endif
+#else
+
+  rmm::cuda_stream_view stream_view(stream);
+  /*
+  rmm::mr::cuda_memory_resource cuda_mr;
+  rmm::mr::binning_memory_resource<rmm::mr::cuda_memory_resource> bin_mr{&cuda_mr};
+  rmm::mr::set_current_device_resource(&bin_mr); // Updates the current device resource pointer to `pool_mr`
+  rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource(); // Points to `pool_mr`
+  */
+  mr->deallocate(pt_sst_data_d, sizeof(sst_data_t), stream_view);
+  mr->deallocate(sst_data_d->detId, max_strips*sizeof(detId_t), stream_view);
+  mr->deallocate(sst_data_d->stripId, max_strips*sizeof(uint16_t), stream_view);
+  mr->deallocate(sst_data_d->adc, max_strips*sizeof(uint8_t), stream_view);
+  mr->deallocate(sst_data_d->fedId, max_strips*sizeof(fedId_t), stream_view);
+  mr->deallocate(sst_data_d->fedCh, max_strips*sizeof(fedCh_t), stream_view);
+  mr->deallocate(sst_data_d->seedStripsMask, 2*max_strips*sizeof(int), stream_view);
+  mr->deallocate(sst_data_d->prefixSeedStripsNCMask, 2*max_strips*sizeof(int), stream_view);
+  mr->deallocate(sst_data_d->d_temp_storage, sst_data_d->temp_storage_bytes, stream_view);
 #endif
 #if USE_TEXTURE
   cudaUnbindTexture(stripIdTexRef);
@@ -536,10 +605,11 @@ void freeSSTDataGPU(sst_data_t *sst_data_d, sst_data_t *pt_sst_data_d, gpu_timin
 }
 
 extern "C"
-void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+void freeCalibDataGPU(int max_strips, calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream, rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
+#ifndef RMM
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_calib_data_d);
   cudautils::free_device(dev, calib_data_d->noise);
@@ -549,6 +619,13 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d,
   CUDA_RT_CALL(cudaFree(calib_data_d->noise));
   CUDA_RT_CALL(cudaFree(calib_data_d->bad));
 #endif
+#else
+  rmm::cuda_stream_view stream_view(stream);
+  mr->deallocate(pt_calib_data_d, sizeof(calib_data_t), stream_view);
+  mr->deallocate(calib_data_d->noise, 2*max_strips*sizeof(float), stream_view);
+  mr->deallocate(calib_data_d->bad, max_strips*sizeof(bool), stream_view);
+#endif
+
 #if USE_TEXTURE
   cudaUnbindTexture(noiseTexRef);
   cudaUnbindTexture(gainTexRef);
@@ -559,10 +636,11 @@ void freeCalibDataGPU(calib_data_t *calib_data_d, calib_data_t *pt_calib_data_d,
 }
 
 extern "C"
-void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream) {
+void freeClustDataGPU(int max_strips, clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d, gpu_timing_t *gpu_timing, int dev, cudaStream_t stream, rmm::mr::device_memory_resource *mr) {
 #ifdef GPU_TIMER
   gpu_timer_start(gpu_timing, stream);
 #endif
+#ifndef RMM
 #ifdef CACHE_ALLOC
   cudautils::free_device(dev, pt_clust_data_d);
   cudautils::free_device(dev, clust_data_d->clusterLastIndexLeft);
@@ -575,6 +653,14 @@ void freeClustDataGPU(clust_data_t *clust_data_d, clust_data_t *pt_clust_data_d,
   CUDA_RT_CALL(cudaFree(clust_data_d->clusterADCs));
   CUDA_RT_CALL(cudaFree(clust_data_d->trueCluster));
   CUDA_RT_CALL(cudaFree(clust_data_d->barycenter));
+#endif
+#else
+  rmm::cuda_stream_view stream_view(stream);
+  mr->deallocate(pt_clust_data_d, sizeof(clust_data_t), stream_view);
+  mr->deallocate(clust_data_d->clusterLastIndexLeft, 2*max_strips*sizeof(int), stream_view);
+  mr->deallocate(clust_data_d->clusterADCs, max_strips*256*sizeof(uint8_t), stream_view);
+  mr->deallocate(clust_data_d->trueCluster, max_strips*sizeof(bool), stream_view);
+  mr->deallocate(clust_data_d->barycenter, max_strips*sizeof(float), stream_view);
 #endif
 #ifdef GPU_TIMER
   gpu_timing->memFreeTime += gpu_timer_measure_end(gpu_timing, stream);
